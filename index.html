@@ -493,17 +493,40 @@ const Auth={
   },
   onLoggedIn(teamName){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
-    // Check for cached in-progress game
-    const cached=Cache.loadLocal();
+    // Check server for any in-progress game, fall back to cache only if offline
     const cacheCard=document.getElementById('resume-cache-card');
-    if(cached&&cached.game&&!cached.game.completed){
-      cacheCard.classList.remove('hidden');
-      cacheCard.innerHTML=`<button class="btn btn-warning btn-lg" onclick="Games.resumeFromCache()">🏈 Resume Game vs ${cached.game.opponent} (${cached.plays?cached.plays.length:0} plays)</button><p style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:4px">${Cache.getStatus()||'Saved locally'}</p>`;
-    }else{
-      cacheCard.classList.add('hidden');
-      cacheCard.innerHTML='';
-    }
+    cacheCard.classList.add('hidden');
+    cacheCard.innerHTML='';
+    Auth.checkActiveGame(teamName);
     UI.show('screen-home');
+  },
+  async checkActiveGame(teamName){
+    const cacheCard=document.getElementById('resume-cache-card');
+    // Always clear stale cache first
+    Cache.clear();
+    try{
+      const seasons=await API.get('/seasons');
+      if(!seasons||!seasons.length)return;
+      for(const s of seasons){
+        const games=await API.get(`/seasons/${s.id}/games`);
+        const active=games.find(g=>!g.completed);
+        if(active){
+          const plays=await API.get(`/games/${active.id}/plays`);
+          cacheCard.classList.remove('hidden');
+          cacheCard.innerHTML=`<button class="btn btn-warning btn-lg" onclick="Games.resumeFromServer(${s.id},${active.id})">🏈 Resume: vs ${active.opponent} (${plays.length} plays, Q${(active.game_state&&active.game_state.quarter)||1})</button><p style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:4px">Live from server</p>`;
+          return;
+        }
+      }
+      // No active games found on server
+    }catch(e){
+      // Offline — check local cache but only if it has pending plays
+      const cached=Cache.loadLocal();
+      const pending=Cache.getPending();
+      if(cached&&cached.game&&!cached.game.completed&&pending.length>0){
+        cacheCard.classList.remove('hidden');
+        cacheCard.innerHTML=`<button class="btn btn-warning btn-lg" onclick="Games.resumeFromCache()">🏈 Resume Game vs ${cached.game.opponent} (${pending.length} unsaved plays)</button><p style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:4px">⚠️ Offline — ${pending.length} plays need sync</p>`;
+      }
+    }
   },
   async logout(){
     try{await API.post('/logout')}catch(e){}
@@ -732,6 +755,19 @@ const Games={
     // Try to sync pending plays
     Cache.syncPending();
     GameUI.init();
+  },
+  async resumeFromServer(seasonId,gameId){
+    try{
+      const seasons=await API.get('/seasons');
+      currentSeason=seasons.find(s=>s.id===seasonId);
+      if(!currentSeason){alert('Season not found');return}
+      const games=await API.get(`/seasons/${seasonId}/games`);
+      const g=games.find(x=>x.id===gameId);if(!g){alert('Game not found');return}
+      currentGame={id:g.id,opponent:g.opponent,homeAway:g.home_away,fieldLength:g.field_length,teamScore:g.team_score,oppScore:g.opp_score,completed:g.completed};
+      gameState=g.game_state||{possession:'offense',ballPos:14,down:1,firstDownLine:20,fieldLength:g.field_length,mid:g.field_length/2,quarter:1};
+      gamePlays=await API.get(`/games/${gameId}/plays`);
+      GameUI.init();
+    }catch(e){alert('Could not load game: '+e.message)}
   },
   async summary(gid){
     UI.show('screen-summary');
