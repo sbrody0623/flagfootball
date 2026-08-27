@@ -113,6 +113,7 @@ h3{font-size:1rem;margin-bottom:6px}
     <span class="team-name" id="home-team-name">🏈 Team</span>
     <span class="logout-btn" onclick="Auth.logout()">Logout</span>
   </div>
+  <div class="card" id="resume-cache-card" class="hidden"></div>
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="Seasons.showCreate()">+ New Season</button>
     <button class="btn btn-outline" onclick="Seasons.loadList()">View Seasons</button>
@@ -239,9 +240,10 @@ h3{font-size:1rem;margin-bottom:6px}
     <div class="team"><div class="name" id="g-op-n">Them</div><div class="pts" id="g-op-s">0</div></div>
   </div>
   <div class="field-bar">
-    <div class="down" id="g-down">1st & 20</div>
-    <div class="yardline" id="g-yd">-16</div>
+    <div class="down"><span id="g-qtr">Q1</span> | <span id="g-down">1st & 20</span></div>
+    <div class="yardline" id="g-yd">-14</div>
     <div class="poss" id="g-poss">Offense</div>
+    <div class="poss" id="g-sync" style="color:#ffeb3b;font-size:0.75rem"></div>
   </div>
   <div id="play-flow" class="card">
     <div id="step-type"><div class="step-label">What type of play?</div><div class="play-btn-grid" id="type-btns"></div></div>
@@ -304,6 +306,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div class="card" id="game-ctrls">
     <div class="action-row">
       <button class="btn btn-warning btn-sm" onclick="GameActions.manualSwitch()">🔄 Switch</button>
+      <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32" onclick="GameActions.endQuarter()">🔔 End Qtr</button>
       <button class="btn btn-secondary btn-sm" onclick="GameActions.undo()">↩️ Undo</button>
       <button class="btn btn-sm" style="background:#e3f2fd;color:#1565c0" onclick="GameActions.toggleLog()">📝 Log</button>
       <button class="btn btn-danger btn-sm" onclick="GameActions.endGame()">🏁 End</button>
@@ -350,6 +353,108 @@ const API={
 };
 
 // ============================================================
+// OFFLINE CACHE - saves game state locally, syncs when online
+// ============================================================
+const Cache={
+  KEY:'ff_offline_cache',
+  
+  // Save current game state + plays locally
+  saveLocal(){
+    if(!currentGame)return;
+    const data={
+      gameId:currentGame.id,
+      game:currentGame,
+      gameState:gameState,
+      plays:gamePlays,
+      pendingPlays:this.getPending(),
+      timestamp:Date.now()
+    };
+    localStorage.setItem(this.KEY,JSON.stringify(data));
+  },
+
+  // Load from local cache (used when offline or resuming)
+  loadLocal(){
+    try{
+      const raw=localStorage.getItem(this.KEY);
+      if(!raw)return null;
+      return JSON.parse(raw);
+    }catch(e){return null}
+  },
+
+  // Clear local cache
+  clear(){
+    localStorage.removeItem(this.KEY);
+    localStorage.removeItem(this.KEY+'_pending');
+  },
+
+  // Queue a play to sync later
+  queuePlay(play){
+    const pending=this.getPending();
+    pending.push(play);
+    localStorage.setItem(this.KEY+'_pending',JSON.stringify(pending));
+  },
+
+  // Get pending plays that haven't synced
+  getPending(){
+    try{
+      return JSON.parse(localStorage.getItem(this.KEY+'_pending')||'[]');
+    }catch(e){return[]}
+  },
+
+  // Clear pending after successful sync
+  clearPending(){
+    localStorage.setItem(this.KEY+'_pending','[]');
+  },
+
+  // Attempt to sync pending plays to server
+  async syncPending(){
+    const pending=this.getPending();
+    if(!pending.length)return;
+    if(!currentGame)return;
+    let synced=0;
+    for(const play of pending){
+      try{
+        await API.post(`/games/${currentGame.id}/plays`,play);
+        synced++;
+      }catch(e){
+        // Still offline, stop trying
+        break;
+      }
+    }
+    if(synced>0){
+      // Remove synced plays from pending
+      const remaining=pending.slice(synced);
+      localStorage.setItem(this.KEY+'_pending',JSON.stringify(remaining));
+    }
+    // Sync game state
+    if(synced>0){
+      try{
+        await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState});
+      }catch(e){}
+    }
+    if(synced>0&&pending.length===synced){
+      console.log(`✅ Synced ${synced} cached plays`);
+    }
+  },
+
+  // Check if we're online
+  isOnline(){return navigator.onLine},
+
+  // Show sync status
+  getStatus(){
+    const pending=this.getPending();
+    if(pending.length>0)return`⚠️ ${pending.length} plays cached offline`;
+    return'';
+  }
+};
+
+// Listen for coming back online
+window.addEventListener('online',()=>{
+  console.log('Back online - syncing...');
+  Cache.syncPending();
+});
+
+// ============================================================
 // UI
 // ============================================================
 const UI={
@@ -388,6 +493,16 @@ const Auth={
   },
   onLoggedIn(teamName){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
+    // Check for cached in-progress game
+    const cached=Cache.loadLocal();
+    const cacheCard=document.getElementById('resume-cache-card');
+    if(cached&&cached.game&&!cached.game.completed){
+      cacheCard.classList.remove('hidden');
+      cacheCard.innerHTML=`<button class="btn btn-warning btn-lg" onclick="Games.resumeFromCache()">🏈 Resume Game vs ${cached.game.opponent} (${cached.plays?cached.plays.length:0} plays)</button><p style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:4px">${Cache.getStatus()||'Saved locally'}</p>`;
+    }else{
+      cacheCard.classList.add('hidden');
+      cacheCard.innerHTML='';
+    }
     UI.show('screen-home');
   },
   async logout(){
@@ -565,7 +680,7 @@ const Games={
     const fl=parseInt(document.querySelector('[name="rg-fl"]:checked').value);
     const st=document.querySelector('[name="rg-st"]:checked').value;
     const r=currentSeason.rules;
-    const state={possession:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2};
+    const state={possession:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2,quarter:1};
     try{
       const res=await API.post(`/seasons/${currentSeason.id}/games`,{opponent:opp,homeAway:ha,fieldLength:fl,gameState:state});
       currentGame={id:res.id,opponent:opp,homeAway:ha,fieldLength:fl,teamScore:0,oppScore:0,completed:false};
@@ -590,10 +705,33 @@ const Games={
       const games=await API.get(`/seasons/${currentSeason.id}/games`);
       const g=games.find(x=>x.id===gid);if(!g)return;
       currentGame={id:g.id,opponent:g.opponent,homeAway:g.home_away,fieldLength:g.field_length,teamScore:g.team_score,oppScore:g.opp_score,completed:g.completed};
-      gameState=g.game_state||{possession:'offense',ballPos:16,down:1,firstDownLine:20,fieldLength:g.field_length,mid:g.field_length/2};
+      gameState=g.game_state||{possession:'offense',ballPos:14,down:1,firstDownLine:20,fieldLength:g.field_length,mid:g.field_length/2,quarter:1};
       gamePlays=await API.get(`/games/${gid}/plays`);
+      // Sync any pending offline plays
+      Cache.syncPending();
       GameUI.init();
-    }catch(e){alert(e.message)}
+    }catch(e){
+      // Server unreachable — try loading from local cache
+      const cached=Cache.loadLocal();
+      if(cached&&cached.gameId==gid){
+        currentGame=cached.game;
+        gameState=cached.gameState;
+        gamePlays=cached.plays||[];
+        GameUI.init();
+      }else{
+        alert('Cannot reach server and no local cache for this game.');
+      }
+    }
+  },
+  resumeFromCache(){
+    const cached=Cache.loadLocal();
+    if(!cached||!cached.game){alert('No cached game found');return}
+    currentGame=cached.game;
+    gameState=cached.gameState;
+    gamePlays=cached.plays||[];
+    // Try to sync pending plays
+    Cache.syncPending();
+    GameUI.init();
   },
   async summary(gid){
     UI.show('screen-summary');
@@ -603,11 +741,19 @@ const Games={
       const plays=await API.get(`/games/${gid}/plays`);
       const teamName=localStorage.getItem('ff_team_name')||'Us';
       const statsHtml=Stats.buildGameStats(plays);
+      // Store plays globally for quarter filtering
+      window._summaryPlays=plays;
       document.getElementById('summary-el').innerHTML=`
         <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
         <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p></div>
-        ${statsHtml}
-        <div class="card"><h3>Play-by-Play</h3><div class="play-log">${plays.map((p,i)=>`<div class="play-log-item"><strong>#${i+1}</strong> ${p.description}</div>`).join('')||'<div class="play-log-item">No plays</div>'}</div></div>`;
+        <div class="card"><h3>📊 Stats by Quarter</h3><div class="action-row" style="margin-bottom:10px">
+          <button class="btn btn-sm btn-primary" onclick="Stats.filterQtr(0)">Full Game</button>
+          <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(1)">Q1</button>
+          <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(2)">Q2</button>
+          <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(3)">Q3</button>
+          <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(4)">Q4</button>
+        </div><div id="stats-container">${statsHtml}</div></div>
+        <div class="card"><h3>Play-by-Play</h3><div class="play-log">${plays.map((p,i)=>`<div class="play-log-item"><strong>#${i+1}</strong>${p.quarter?' <span style="color:var(--muted)">[Q${p.quarter}]</span>':''} ${p.description}</div>`).join('')||'<div class="play-log-item">No plays</div>'}</div></div>`;
     }catch(e){alert(e.message)}
   }
 };
@@ -616,6 +762,11 @@ const Games={
 // STATS CALCULATOR
 // ============================================================
 const Stats={
+  filterQtr(q){
+    const plays=window._summaryPlays||[];
+    const filtered=q===0?plays:plays.filter(p=>(p.quarter||1)===q);
+    document.getElementById('stats-container').innerHTML=this.buildGameStats(filtered);
+  },
   buildGameStats(plays){
     // Aggregate stats per player from play-by-play data
     const passing={};  // {number: {att,comp,yds,td,int}}
@@ -836,11 +987,14 @@ const GameUI={
   refresh(){
     document.getElementById('g-us-s').textContent=currentGame.teamScore;
     document.getElementById('g-op-s').textContent=currentGame.oppScore;
+    const qtr=gameState.quarter||1;
+    document.getElementById('g-qtr').textContent=`Q${qtr}`;
     const dn=['1st','2nd','3rd','4th'][gameState.down-1]||'4th';
     const toGo=gameState.firstDownLine>=gameState.fieldLength?'Goal':(gameState.firstDownLine-gameState.ballPos);
     document.getElementById('g-down').textContent=`${dn} & ${toGo}`;
     document.getElementById('g-yd').textContent=this.fmtYd();
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
+    document.getElementById('g-sync').textContent=Cache.getStatus();
     const lel=document.getElementById('play-log-el');
     if(!gamePlays.length)lel.innerHTML='<div class="play-log-item">No plays yet</div>';
     else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>`<div class="play-log-item"><strong>#${gamePlays.length-i}</strong> ${p.description||p.desc||''}</div>`).join('');
@@ -923,6 +1077,7 @@ const Flow={
     const c=this.current,t=c.type,r=c.result;let need=false,label='Yards';
     if(gameState.possession==='offense'){
       if(t==='pass'&&(r==='complete'||r==='sack')){need=true;label=r==='sack'?'Yards Lost':'Yards Gained'}
+      else if(t==='pass'&&r==='interception'){need=true;label='INT Return Yards (by opponent)'}
       else if(t==='run'){need=true;label=r==='loss'?'Yards Lost':'Yards Gained'}
       else if(t==='punt'&&(r==='down'||r==='return')){need=true;label='Punt Distance'}
       else if(t==='fg'){need=true;label='Kicked From Yard Line'}
@@ -982,7 +1137,7 @@ const Flow={
   buildDesc(){
     const c=this.current,p=c.players;let d='';
     if(gameState.possession==='offense'){
-      if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
+      if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}, returned ${c.yards}yds`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
       else if(c.type==='run'){d=c.result==='gain'?`Run #${p.carrier} +${c.yards}yds`:`Run #${p.carrier} -${Math.abs(c.yards)}yds`}
       else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed`;else if(c.result==='return')d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
       else if(c.type==='fg'){const dist=c.yards+10;if(c.result==='good')d=`FG GOOD #${p.kicker} (${dist}yd)`;else if(c.result==='wide')d=`FG NO GOOD #${p.kicker} (${dist}yd) - Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`FG SHORT #${p.kicker} (${dist}yd) - Touchback`;else if(c._fgShortResult==='return')d=`FG SHORT #${p.kicker} (${dist}yd) - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`FG SHORT #${p.kicker} (${dist}yd) - RETURNED FOR TD!`}}
@@ -1005,7 +1160,19 @@ const Flow={
       if(c.type==='pass'){
         if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
         else if(c.result==='incomplete'){resultStr=Engine.advanceDown()}
-        else if(c.result==='interception'){Engine.turnover();resultStr='turnover'}
+        else if(c.result==='interception'){
+          // Opponent intercepted at current spot, returned c.yards
+          const retYds=c.yards||0;
+          const intSpot=gameState.fieldLength-gameState.ballPos; // from opponent's goal
+          const oppStart=intSpot+retYds;
+          if(oppStart>=gameState.fieldLength){
+            // INT returned for TD by opponent
+            currentGame.oppScore+=6;resultStr='td';
+          }else{
+            Engine.switchDef(Math.max(1,Math.min(oppStart,gameState.fieldLength-1)));
+            resultStr='possession';
+          }
+        }
         else if(c.result==='sack'){resultStr=Engine.advance(-Math.abs(c.yards))}
       }else if(c.type==='run'){
         const yds=c.result==='gain'?c.yards:-Math.abs(c.yards);resultStr=Engine.advance(yds)
@@ -1077,32 +1244,43 @@ const Flow={
     // Handle special results
     let finalDesc=desc;
     if(resultStr==='td'){
-      if(gameState.possession==='offense'||c.type==='puntreturn'||(c.type==='pass'&&c.result==='interception'&&gameState.possession!=='offense')){
-        if(c.type!=='punt')currentGame.teamScore+=6;
-        finalDesc+=' → TOUCHDOWN!';
-      }else{currentGame.oppScore+=6;finalDesc+=' → OPP TOUCHDOWN!'}
+      // Determine who scored
+      const weScored = (
+        (prevState.possession==='offense' && c.result!=='interception' && c.type!=='punt') ||
+        (prevState.possession==='defense' && (c.result==='interception' || c.type==='puntreturn'))
+      );
+      if(weScored){
+        if(!finalDesc.includes('TOUCHDOWN'))finalDesc+=' → TOUCHDOWN!';
+        // teamScore already incremented above where applicable
+      }else{
+        if(!finalDesc.includes('TOUCHDOWN'))finalDesc+=' → OPP TOUCHDOWN!';
+        // oppScore already incremented above where applicable
+      }
     }else if(resultStr==='safety'){
-      if(gameState.possession==='offense'){currentGame.oppScore+=2;finalDesc+=' → SAFETY (opp +2)';Engine.handleSafety('opponent')}
+      if(prevState.possession==='offense'){currentGame.oppScore+=2;finalDesc+=' → SAFETY (opp +2)';Engine.handleSafety('opponent')}
       else{currentGame.teamScore+=2;finalDesc+=' → SAFETY (us +2)';Engine.handleSafety('team')}
     }else if(resultStr==='turnover'){
-      if(c.result!=='interception')finalDesc+=' → Turnover on downs!';
-      if(c.type!=='pass'||c.result!=='interception')Engine.turnover()
+      finalDesc+=' → Turnover on downs!';
+      Engine.turnover()
     }
 
     // Save play to server
-    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:c.players,yards:c.yards||0,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc};
+    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:c.players,yards:c.yards||0,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1};
     gamePlays.push(play);
-    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){}
-    // Update game state on server
+    // Save to server, fall back to cache if offline
+    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+    // Always save locally as backup
+    Cache.saveLocal();
 
     // Check for XP
-    if(resultStr==='td'||(c.type==='punt'&&c.result==='td')){
-      const whoScored=(gameState.possession==='offense'&&c.type!=='punt')||(c.type==='puntreturn'&&c.result==='return')||(c.type==='pass'&&c.result==='interception'&&prevState.possession==='defense')?'team':'opponent';
-      GameUI.refresh();XP.show(whoScored==='team'||(c.type!=='punt')?'team':'opponent');
-      // Simplified: determine who to show XP for
-      if(c.type==='punt'&&c.result==='td')XP.show('opponent');
-      else XP.show('team');
+    if(resultStr==='td'){
+      const weScored = (
+        (prevState.possession==='offense' && c.result!=='interception' && c.type!=='punt') ||
+        (prevState.possession==='defense' && (c.result==='interception' || (c.type==='puntreturn'&&c.result==='return') || c._fgShortResult==='td'))
+      );
+      GameUI.refresh();
+      XP.show(weScored?'team':'opponent');
       return;
     }
 
@@ -1162,13 +1340,14 @@ const XP={
     if(this.team==='team')currentGame.teamScore+=scored;else currentGame.oppScore+=scored;
     const mLabel=this.pts===2?'2pt set play':(this.meth==='kick'?'1pt kick':'1pt set play');
     const desc=`${this.team==='team'?'Our':'Opp'} XP: ${mLabel} - ${r==='good'?'GOOD':'No Good'}`;
-    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{},yards:0,downBefore:0,ballPosBefore:0,description:desc};
+    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{},yards:0,downBefore:0,ballPosBefore:0,description:desc,quarter:gameState.quarter||1};
     gamePlays.push(play);
-    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){}
+    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
     // After XP, other team gets ball
-    const afterYd=currentSeason.rules.afterScoreYd||16;
+    const afterYd=currentSeason.rules.afterScoreYd||14;
     if(this.team==='team')Engine.switchDef(afterYd);else Engine.switchOff(afterYd);
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+    Cache.saveLocal();
     document.getElementById('panel-xp').classList.add('hidden');
     document.getElementById('play-flow').classList.remove('hidden');
     document.getElementById('game-ctrls').classList.remove('hidden');
@@ -1182,9 +1361,23 @@ const XP={
 const GameActions={
   manualSwitch(){
     const r=currentSeason.rules;
-    if(gameState.possession==='offense')Engine.switchDef(r.afterScoreYd||16);else Engine.switchOff(r.afterScoreYd||16);
+    if(gameState.possession==='offense')Engine.switchDef(r.afterScoreYd||14);else Engine.switchOff(r.afterScoreYd||14);
     API.put(`/games/${currentGame.id}`,{gameState}).catch(()=>{});
     GameUI.refresh();Flow.restart()
+  },
+  async endQuarter(){
+    const qtr=gameState.quarter||1;
+    if(qtr>=4){
+      if(!confirm('Already in Q4. End game?')){return}
+      this.endGame();return;
+    }
+    gameState.quarter=qtr+1;
+    // Record a marker play
+    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} ──`,quarter:qtr};
+    gamePlays.push(play);
+    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){}
+    try{await API.put(`/games/${currentGame.id}`,{gameState})}catch(e){}
+    GameUI.refresh();Flow.restart();
   },
   async undo(){
     if(!gamePlays.length){alert('Nothing to undo');return}if(!confirm('Undo?'))return;
