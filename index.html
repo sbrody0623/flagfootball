@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Flag Football Stat Tracker</title>
+<style>
+:root{--primary:#1a73e8;--primary-dark:#1557b0;--danger:#dc3545;--success:#28a745;--warning:#ffc107;--bg:#f0f2f5;--card:#ffffff;--text:#212529;--muted:#6c757d;--border:#dee2e6;--radius:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
+.container{max-width:500px;margin:0 auto;padding:10px;padding-bottom:60px}
+h1{font-size:1.4rem;text-align:center;padding:14px 0 6px;color:var(--primary)}
+h2{font-size:1.15rem;margin-bottom:10px}
+h3{font-size:1rem;margin-bottom:6px}
+.card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+.btn{display:inline-block;padding:12px 16px;border:none;border-radius:var(--radius);font-size:0.95rem;font-weight:600;cursor:pointer;text-align:center;width:100%;margin-bottom:6px;transition:transform 0.1s,opacity 0.1s}
+.btn:active{transform:scale(0.97);opacity:0.8}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-warning{background:var(--warning);color:#000}
+.btn-secondary{background:#6c757d;color:#fff}
+.btn-outline{background:#fff;border:2px solid var(--primary);color:var(--primary)}
+.btn-sm{padding:8px 12px;font-size:0.85rem;width:auto;margin:3px}
+.btn-lg{padding:16px;font-size:1.1rem}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-weight:500;margin-bottom:4px;font-size:0.9rem}
+.form-group input,.form-group select{width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:1rem;background:#fff}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(26,115,232,0.15)}
+.form-row{display:flex;gap:8px}
+.form-row .form-group{flex:1}
+.player-list{list-style:none}
+.player-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.player-item:last-child{border-bottom:none}
+.player-number{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--primary);color:#fff;border-radius:50%;font-weight:700;font-size:0.9rem;margin-right:10px;flex-shrink:0}
+.scoreboard{display:flex;justify-content:space-around;align-items:center;padding:10px;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:var(--radius);margin-bottom:10px}
+.scoreboard .team{text-align:center}
+.scoreboard .team .name{font-size:0.75rem;opacity:0.7;margin-bottom:2px}
+.scoreboard .team .pts{font-size:2rem;font-weight:800}
+.scoreboard .vs{font-size:0.7rem;opacity:0.4}
+.field-bar{text-align:center;padding:8px;background:linear-gradient(135deg,#2e7d32,#388e3c);color:#fff;border-radius:var(--radius);margin-bottom:10px}
+.field-bar .down{font-size:0.85rem;opacity:0.9}
+.field-bar .yardline{font-size:1.5rem;font-weight:800;margin:2px 0}
+.field-bar .poss{font-size:0.8rem;opacity:0.85}
+.play-btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.play-btn{padding:18px 10px;border:none;border-radius:var(--radius);font-size:1rem;font-weight:600;cursor:pointer;text-align:center;transition:transform 0.1s;background:#e3f2fd;color:#1565c0}
+.play-btn:active{transform:scale(0.95)}
+.play-btn.selected{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(26,115,232,0.3)}
+.keypad{background:#f8f9fa;border-radius:var(--radius);padding:12px;margin:10px 0}
+.keypad-display{text-align:center;font-size:2rem;font-weight:800;padding:8px;background:#fff;border-radius:var(--radius);margin-bottom:10px;min-height:50px;display:flex;align-items:center;justify-content:center;border:2px solid var(--border)}
+.keypad-label{text-align:center;font-size:0.85rem;color:var(--muted);margin-bottom:6px;font-weight:500}
+.keypad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.key-btn{padding:14px;border:none;border-radius:var(--radius);font-size:1.3rem;font-weight:700;cursor:pointer;background:#fff;color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.08);transition:transform 0.1s}
+.key-btn:active{transform:scale(0.93);background:#e3f2fd}
+.key-btn.key-clear{background:#ffebee;color:var(--danger);font-size:0.9rem}
+.key-btn.key-done{background:#e8f5e9;color:var(--success);font-size:0.9rem}
+.key-btn.key-neg{background:#fff3e0;color:#e65100;font-size:0.9rem}
+.step-label{font-size:0.85rem;color:var(--muted);margin-bottom:8px;text-align:center;font-weight:500}
+.radio-group{display:flex;gap:8px;flex-wrap:wrap}
+.radio-group label{flex:1;min-width:70px;padding:10px 8px;text-align:center;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:0.9rem;font-weight:500;transition:all 0.2s}
+.radio-group input[type="radio"]{display:none}
+.radio-group label:has(input:checked){border-color:var(--primary);background:#e3f2fd}
+.play-log{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)}
+.play-log-item{padding:7px 10px;border-bottom:1px solid var(--border);font-size:0.8rem;line-height:1.3}
+.play-log-item:nth-child(even){background:#f8f9fa}
+.hidden{display:none!important}
+.nav-back{display:inline-block;padding:8px 0;color:var(--primary);cursor:pointer;font-size:0.9rem;margin-bottom:6px}
+.nav-back:hover{text-decoration:underline}
+.info-box{background:#e3f2fd;padding:10px;border-radius:var(--radius);font-size:0.85rem;margin-bottom:10px;color:#1565c0;text-align:center}
+.error-box{background:#ffebee;padding:10px;border-radius:var(--radius);font-size:0.85rem;margin-bottom:10px;color:#c62828;text-align:center}
+.action-row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+.team-header{display:flex;justify-content:space-between;align-items:center;padding:8px 0;margin-bottom:6px}
+.team-header .team-name{font-weight:700;color:var(--primary)}
+.team-header .logout-btn{font-size:0.8rem;color:var(--muted);cursor:pointer;text-decoration:underline}
+.loading{text-align:center;padding:20px;color:var(--muted)}
+@media(max-width:400px){.container{padding:6px}.play-btn{padding:14px 8px;font-size:0.9rem}.form-row{flex-direction:column;gap:0}}
+</style>
+</head>
+<body>
+<div class="container" id="app">
+
+<!-- LOGIN / REGISTER -->
+<div id="screen-auth">
+  <h1>🏈 Flag Football<br>Stat Tracker</h1>
+  <div class="card">
+    <div id="auth-login">
+      <h3>Team Login</h3>
+      <div class="form-group"><label>Team Code</label><input type="text" id="login-code" placeholder="Your team's login code" autocapitalize="none"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="login-pass" placeholder="Password"></div>
+      <button class="btn btn-primary" onclick="Auth.login()">Log In</button>
+      <div style="text-align:center;margin-top:8px">
+        <span style="font-size:0.85rem;color:var(--muted)">New team? </span>
+        <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showRegister()">Create Account</span>
+      </div>
+    </div>
+    <div id="auth-register" class="hidden">
+      <h3>Create Team Account</h3>
+      <div class="form-group"><label>Team Name</label><input type="text" id="reg-team" placeholder="e.g. Thunder"></div>
+      <div class="form-group"><label>Login Code (unique, for your team)</label><input type="text" id="reg-code" placeholder="e.g. thunder2026" autocapitalize="none"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="reg-pass" placeholder="Choose a password"></div>
+      <button class="btn btn-success" onclick="Auth.register()">Create Team</button>
+      <div style="text-align:center;margin-top:8px">
+        <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showLogin()">← Back to Login</span>
+      </div>
+    </div>
+    <div id="auth-error" class="error-box hidden"></div>
+  </div>
+</div>
+
+<!-- HOME (logged in) -->
+<div id="screen-home" class="hidden">
+  <div class="team-header">
+    <span class="team-name" id="home-team-name">🏈 Team</span>
+    <span class="logout-btn" onclick="Auth.logout()">Logout</span>
+  </div>
+  <div class="card">
+    <button class="btn btn-primary btn-lg" onclick="Seasons.showCreate()">+ New Season</button>
+    <button class="btn btn-outline" onclick="Seasons.loadList()">View Seasons</button>
+  </div>
+</div>
+
+<!-- SEASON LIST -->
+<div id="screen-seasons" class="hidden">
+  <span class="nav-back" onclick="UI.show('screen-home')">← Home</span>
+  <h2>Seasons</h2>
+  <div id="season-list-el"></div>
+</div>
+
+<!-- CREATE SEASON -->
+<div id="screen-create-season" class="hidden">
+  <span class="nav-back" onclick="UI.show('screen-home')">← Back</span>
+  <h2>New Season</h2>
+  <div class="card">
+    <div class="form-group"><label>Season Name</label><input type="text" id="inp-sname" placeholder="e.g. Fall 2026"></div>
+    <button class="btn btn-primary" onclick="Seasons.create()">Create → Add Players</button>
+  </div>
+</div>
+
+<!-- SEASON DASHBOARD -->
+<div id="screen-dash" class="hidden">
+  <span class="nav-back" onclick="UI.show('screen-home')">← Home</span>
+  <h2 id="dash-title"></h2>
+  <div class="card">
+    <button class="btn btn-primary btn-lg" onclick="Games.showNew()">🏈 Start New Game</button>
+    <button class="btn btn-secondary" onclick="Players.load()">👥 Players</button>
+    <button class="btn btn-secondary" onclick="Rules.show()">📋 Rules</button>
+    <button class="btn btn-secondary" onclick="Games.loadHistory()">📊 Game History</button>
+  </div>
+</div>
+
+<!-- PLAYERS -->
+<div id="screen-players" class="hidden">
+  <span class="nav-back" onclick="Seasons.showDash()">← Season</span>
+  <h2>Players</h2>
+  <div class="card">
+    <h3 id="pform-title">Add Player</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Jersey #</label><input type="number" id="inp-pnum" min="0" max="99" placeholder="#"></div>
+      <div class="form-group"><label>Name</label><input type="text" id="inp-pname" placeholder="Name"></div>
+    </div>
+    <div class="form-group"><label>Position</label><input type="text" id="inp-ppos" placeholder="QB, WR, etc."></div>
+    <button class="btn btn-success" id="btn-psave" onclick="Players.save()">Add Player</button>
+    <button class="btn btn-secondary hidden" id="btn-pcancel" onclick="Players.cancelEdit()">Cancel</button>
+  </div>
+  <div class="card"><h3>Roster</h3><ul class="player-list" id="player-list-el"></ul></div>
+  <button class="btn btn-primary" onclick="Rules.show()">Next: Rules →</button>
+</div>
+
+<!-- RULES -->
+<div id="screen-rules" class="hidden">
+  <span class="nav-back" onclick="Seasons.showDash()">← Season</span>
+  <h2>Season Rules</h2>
+  <div class="card">
+    <h3>Kicking</h3>
+    <div class="form-group"><label>Field goals allowed?</label>
+      <select id="r-fg" onchange="Rules.vis()"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div id="r-fg-xp-wrap"><div class="form-group"><label>XP kicks allowed?</label>
+      <select id="r-xpk"><option value="1">Yes</option><option value="0">No</option></select></div></div>
+  </div>
+  <div class="card">
+    <h3>Punting</h3>
+    <div class="form-group"><label>Punts allowed?</label>
+      <select id="r-punts" onchange="Rules.vis()"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div id="r-punt-alt" class="hidden"><div class="form-group"><label>If declared, opponent starts at yd line:</label>
+      <input type="number" id="r-punt-yd" value="40"></div></div>
+  </div>
+  <div class="card">
+    <h3>After Score</h3>
+    <div class="form-group"><label>Opposing team starts at own:</label>
+      <input type="number" id="r-after" value="14"></div>
+  </div>
+  <div class="card">
+    <h3>Touchbacks</h3>
+    <div class="form-group"><label>Touchback yard line:</label>
+      <input type="number" id="r-tb" value="20"></div>
+  </div>
+  <div class="card">
+    <h3>Safety</h3>
+    <div class="form-group"><label>After safety:</label>
+      <select id="r-safe" onchange="Rules.vis()"><option value="freekick">Free kick from yd line</option><option value="yardline">Ball at yd line</option></select></div>
+    <div id="r-safe-kick"><div class="form-group"><label>Free kick from:</label>
+      <input type="number" id="r-safe-k-yd" value="20"></div></div>
+    <div id="r-safe-place" class="hidden"><div class="form-group"><label>Ball placed at:</label>
+      <input type="number" id="r-safe-p-yd" value="40"></div></div>
+  </div>
+  <button class="btn btn-success" onclick="Rules.save()">Save Rules</button>
+</div>
+
+<!-- NEW GAME -->
+<div id="screen-new-game" class="hidden">
+  <span class="nav-back" onclick="Seasons.showDash()">← Back</span>
+  <h2>New Game</h2>
+  <div class="card">
+    <div class="form-group"><label>Opponent</label><input type="text" id="inp-opp" placeholder="Opponent name"></div>
+    <div class="form-group"><label>Home / Away</label>
+      <div class="radio-group">
+        <label><input type="radio" name="rg-ha" value="home" checked><span>🏠 Home</span></label>
+        <label><input type="radio" name="rg-ha" value="away"><span>✈️ Away</span></label>
+      </div></div>
+    <div class="form-group"><label>Field Length</label>
+      <div class="radio-group">
+        <label><input type="radio" name="rg-fl" value="80" checked><span>80 yds</span></label>
+        <label><input type="radio" name="rg-fl" value="100"><span>100 yds</span></label>
+      </div></div>
+    <div class="form-group"><label>We start on:</label>
+      <div class="radio-group">
+        <label><input type="radio" name="rg-st" value="offense" checked><span>🏈 Offense</span></label>
+        <label><input type="radio" name="rg-st" value="defense"><span>🛡️ Defense</span></label>
+      </div></div>
+    <button class="btn btn-success btn-lg" onclick="Games.start()">Start Game!</button>
+  </div>
+</div>
+
+<!-- LIVE GAME -->
+<div id="screen-game" class="hidden">
+  <div class="scoreboard">
+    <div class="team"><div class="name" id="g-us-n">Us</div><div class="pts" id="g-us-s">0</div></div>
+    <div class="vs">VS</div>
+    <div class="team"><div class="name" id="g-op-n">Them</div><div class="pts" id="g-op-s">0</div></div>
+  </div>
+  <div class="field-bar">
+    <div class="down" id="g-down">1st & 20</div>
+    <div class="yardline" id="g-yd">-16</div>
+    <div class="poss" id="g-poss">Offense</div>
+  </div>
+  <div id="play-flow" class="card">
+    <div id="step-type"><div class="step-label">What type of play?</div><div class="play-btn-grid" id="type-btns"></div></div>
+    <div id="step-result" class="hidden"><div class="step-label" id="result-label">Result?</div><div class="play-btn-grid" id="result-btns"></div></div>
+    <div id="step-player" class="hidden">
+      <div class="keypad">
+        <div class="keypad-label" id="keypad-label">Enter Jersey #</div>
+        <div class="keypad-display" id="keypad-display">-</div>
+        <div class="keypad-grid">
+          <button class="key-btn" onclick="Keypad.press('1')">1</button><button class="key-btn" onclick="Keypad.press('2')">2</button><button class="key-btn" onclick="Keypad.press('3')">3</button>
+          <button class="key-btn" onclick="Keypad.press('4')">4</button><button class="key-btn" onclick="Keypad.press('5')">5</button><button class="key-btn" onclick="Keypad.press('6')">6</button>
+          <button class="key-btn" onclick="Keypad.press('7')">7</button><button class="key-btn" onclick="Keypad.press('8')">8</button><button class="key-btn" onclick="Keypad.press('9')">9</button>
+          <button class="key-btn key-clear" onclick="Keypad.clear()">CLR</button><button class="key-btn" onclick="Keypad.press('0')">0</button><button class="key-btn key-done" onclick="Keypad.done()">OK ✓</button>
+        </div>
+      </div>
+    </div>
+    <div id="step-yards" class="hidden">
+      <div class="keypad">
+        <div class="keypad-label" id="yards-label">Yards</div>
+        <div class="keypad-display" id="yards-display">0</div>
+        <div class="keypad-grid">
+          <button class="key-btn" onclick="YardPad.press('1')">1</button><button class="key-btn" onclick="YardPad.press('2')">2</button><button class="key-btn" onclick="YardPad.press('3')">3</button>
+          <button class="key-btn" onclick="YardPad.press('4')">4</button><button class="key-btn" onclick="YardPad.press('5')">5</button><button class="key-btn" onclick="YardPad.press('6')">6</button>
+          <button class="key-btn" onclick="YardPad.press('7')">7</button><button class="key-btn" onclick="YardPad.press('8')">8</button><button class="key-btn" onclick="YardPad.press('9')">9</button>
+          <button class="key-btn key-neg" onclick="YardPad.negate()">+/−</button><button class="key-btn" onclick="YardPad.press('0')">0</button><button class="key-btn key-done" onclick="YardPad.done()">OK ✓</button>
+        </div>
+      </div>
+    </div>
+    <div id="step-confirm" class="hidden">
+      <div class="info-box" id="confirm-summary"></div>
+      <button class="btn btn-success btn-lg" onclick="Flow.confirm()">✓ Record Play</button>
+      <button class="btn btn-secondary" onclick="Flow.restart()">✗ Cancel</button>
+    </div>
+  </div>
+  <!-- XP Panel -->
+  <div id="panel-xp" class="card hidden">
+    <h3>🎯 Extra Point</h3>
+    <div class="info-box" id="xp-info"></div>
+    <div class="step-label">Go for 1 or 2?</div>
+    <div class="play-btn-grid">
+      <button class="play-btn" onclick="XP.choose(1)" id="xp-btn-1">1 Point</button>
+      <button class="play-btn" onclick="XP.choose(2)" id="xp-btn-2">2 Points</button>
+    </div>
+    <div id="xp-method" class="hidden" style="margin-top:10px">
+      <div class="step-label">Method (from 3 yd line):</div>
+      <div class="play-btn-grid">
+        <button class="play-btn" onclick="XP.method('kick')" id="xp-btn-kick">Kick</button>
+        <button class="play-btn" onclick="XP.method('setplay')" id="xp-btn-set">Set Play</button>
+      </div>
+    </div>
+    <div id="xp-result" class="hidden" style="margin-top:10px">
+      <div class="step-label">Result:</div>
+      <div class="play-btn-grid">
+        <button class="play-btn" onclick="XP.result('good')" style="background:#e8f5e9;color:#2e7d32">✅ Good!</button>
+        <button class="play-btn" onclick="XP.result('nogood')" style="background:#ffebee;color:#c62828">❌ No Good</button>
+      </div>
+    </div>
+  </div>
+  <!-- Controls -->
+  <div class="card" id="game-ctrls">
+    <div class="action-row">
+      <button class="btn btn-warning btn-sm" onclick="GameActions.manualSwitch()">🔄 Switch</button>
+      <button class="btn btn-secondary btn-sm" onclick="GameActions.undo()">↩️ Undo</button>
+      <button class="btn btn-sm" style="background:#e3f2fd;color:#1565c0" onclick="GameActions.toggleLog()">📝 Log</button>
+      <button class="btn btn-danger btn-sm" onclick="GameActions.endGame()">🏁 End</button>
+    </div>
+  </div>
+  <div class="card hidden" id="log-card"><h3>Play-by-Play</h3><div class="play-log" id="play-log-el"></div></div>
+</div>
+
+<!-- GAME HISTORY -->
+<div id="screen-history" class="hidden">
+  <span class="nav-back" onclick="Seasons.showDash()">← Back</span>
+  <h2>Game History</h2>
+  <div id="history-el"></div>
+</div>
+
+<!-- GAME SUMMARY -->
+<div id="screen-summary" class="hidden">
+  <span class="nav-back" onclick="Games.loadHistory()">← Back</span>
+  <h2>Game Summary</h2>
+  <div id="summary-el"></div>
+</div>
+
+</div>
+
+<script>
+// ============================================================
+// API HELPER
+// ============================================================
+const API={
+  token: localStorage.getItem('ff_token')||null,
+  async req(method,path,body){
+    const opts={method,headers:{'Content-Type':'application/json'}};
+    if(this.token) opts.headers['x-auth-token']=this.token;
+    if(body) opts.body=JSON.stringify(body);
+    const res=await fetch('/api'+path,opts);
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||'Request failed');
+    return data;
+  },
+  get(p){return this.req('GET',p)},
+  post(p,b){return this.req('POST',p,b)},
+  put(p,b){return this.req('PUT',p,b)},
+  del(p){return this.req('DELETE',p)}
+};
+
+// ============================================================
+// UI
+// ============================================================
+const UI={
+  show(id){document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));document.getElementById(id).classList.remove('hidden')},
+  showError(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000)}
+};
+
+// ============================================================
+// AUTH
+// ============================================================
+const Auth={
+  showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden')},
+  showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
+  async login(){
+    const code=document.getElementById('login-code').value.trim();
+    const pass=document.getElementById('login-pass').value;
+    if(!code||!pass){UI.showError('auth-error','Enter code and password');return}
+    try{
+      const data=await API.post('/login',{loginCode:code,password:pass});
+      API.token=data.token;localStorage.setItem('ff_token',data.token);
+      localStorage.setItem('ff_team_name',data.teamName);
+      Auth.onLoggedIn(data.teamName);
+    }catch(e){UI.showError('auth-error',e.message)}
+  },
+  async register(){
+    const team=document.getElementById('reg-team').value.trim();
+    const code=document.getElementById('reg-code').value.trim();
+    const pass=document.getElementById('reg-pass').value;
+    if(!team||!code||!pass){UI.showError('auth-error','Fill all fields');return}
+    try{
+      const data=await API.post('/register',{teamName:team,loginCode:code,password:pass});
+      API.token=data.token;localStorage.setItem('ff_token',data.token);
+      localStorage.setItem('ff_team_name',data.teamName);
+      Auth.onLoggedIn(data.teamName);
+    }catch(e){UI.showError('auth-error',e.message)}
+  },
+  onLoggedIn(teamName){
+    document.getElementById('home-team-name').textContent='🏈 '+teamName;
+    UI.show('screen-home');
+  },
+  async logout(){
+    try{await API.post('/logout')}catch(e){}
+    API.token=null;localStorage.removeItem('ff_token');localStorage.removeItem('ff_team_name');
+    UI.show('screen-auth');
+  },
+  async check(){
+    if(!API.token){UI.show('screen-auth');return}
+    try{
+      const me=await API.get('/me');
+      Auth.onLoggedIn(me.team_name);
+    }catch(e){API.token=null;localStorage.removeItem('ff_token');UI.show('screen-auth')}
+  }
+};
+
+// ============================================================
+// SEASONS
+// ============================================================
+let currentSeason=null;
+const Seasons={
+  showCreate(){UI.show('screen-create-season')},
+  async create(){
+    const name=document.getElementById('inp-sname').value.trim();
+    if(!name){alert('Enter a season name');return}
+    try{
+      const s=await API.post('/seasons',{name});
+      currentSeason={id:s.id,name:s.name,rules:s.rules};
+      document.getElementById('inp-sname').value='';
+      Players.load();
+    }catch(e){alert(e.message)}
+  },
+  async loadList(){
+    UI.show('screen-seasons');
+    try{
+      const seasons=await API.get('/seasons');
+      const el=document.getElementById('season-list-el');
+      if(!seasons.length){el.innerHTML='<div class="card">No seasons yet.</div>';return}
+      el.innerHTML=seasons.map(s=>`<div class="card"><h3>${s.name}</h3><button class="btn btn-primary btn-sm" onclick="Seasons.open(${s.id},'${s.name.replace(/'/g,"\\'")}')">Open</button> <button class="btn btn-danger btn-sm" onclick="Seasons.del(${s.id})">Delete</button></div>`).join('');
+    }catch(e){alert(e.message)}
+  },
+  async open(id,name){
+    try{
+      const seasons=await API.get('/seasons');
+      currentSeason=seasons.find(s=>s.id===id);
+      if(!currentSeason){alert('Season not found');return}
+      Seasons.showDash();
+    }catch(e){alert(e.message)}
+  },
+  showDash(){
+    if(!currentSeason)return;
+    document.getElementById('dash-title').textContent=currentSeason.name;
+    UI.show('screen-dash');
+  },
+  async del(id){
+    if(!confirm('Delete this season and all its data?'))return;
+    try{await API.del('/seasons/'+id);Seasons.loadList()}catch(e){alert(e.message)}
+  }
+};
+
+// ============================================================
+// PLAYERS
+// ============================================================
+let playerList=[];
+let editingPid=null;
+const Players={
+  async load(){
+    if(!currentSeason)return;
+    UI.show('screen-players');
+    try{
+      playerList=await API.get(`/seasons/${currentSeason.id}/players`);
+      this.render();
+    }catch(e){alert(e.message)}
+  },
+  render(){
+    const el=document.getElementById('player-list-el');
+    if(!playerList.length){el.innerHTML='<li class="player-item" style="justify-content:center;color:var(--muted)">No players yet</li>';return}
+    el.innerHTML=playerList.map(p=>`<li class="player-item"><div><span class="player-number">${p.number}</span><strong>${p.name}</strong>${p.position?' <small>('+p.position+')</small>':''}</div><div><button class="btn btn-warning btn-sm" onclick="Players.edit(${p.id},${p.number},'${p.name.replace(/'/g,"\\'")}','${(p.position||'').replace(/'/g,"\\'")}')">✏️</button><button class="btn btn-danger btn-sm" onclick="Players.remove(${p.id})">🗑️</button></div></li>`).join('');
+  },
+  async save(){
+    const num=document.getElementById('inp-pnum').value.trim();
+    const name=document.getElementById('inp-pname').value.trim();
+    const pos=document.getElementById('inp-ppos').value.trim();
+    if(!num||!name){alert('Enter # and name');return}
+    try{
+      if(editingPid){
+        await API.put('/players/'+editingPid,{number:parseInt(num),name,position:pos});
+        editingPid=null;document.getElementById('btn-psave').textContent='Add Player';document.getElementById('btn-pcancel').classList.add('hidden');document.getElementById('pform-title').textContent='Add Player';
+      }else{
+        await API.post(`/seasons/${currentSeason.id}/players`,{number:parseInt(num),name,position:pos});
+      }
+      document.getElementById('inp-pnum').value='';document.getElementById('inp-pname').value='';document.getElementById('inp-ppos').value='';
+      Players.load();
+    }catch(e){alert(e.message)}
+  },
+  edit(id,num,name,pos){
+    editingPid=id;
+    document.getElementById('inp-pnum').value=num;document.getElementById('inp-pname').value=name;document.getElementById('inp-ppos').value=pos;
+    document.getElementById('btn-psave').textContent='Save Changes';document.getElementById('btn-pcancel').classList.remove('hidden');document.getElementById('pform-title').textContent='Edit Player';
+  },
+  cancelEdit(){
+    editingPid=null;document.getElementById('inp-pnum').value='';document.getElementById('inp-pname').value='';document.getElementById('inp-ppos').value='';
+    document.getElementById('btn-psave').textContent='Add Player';document.getElementById('btn-pcancel').classList.add('hidden');document.getElementById('pform-title').textContent='Add Player';
+  },
+  async remove(id){if(!confirm('Remove?'))return;try{await API.del('/players/'+id);Players.load()}catch(e){alert(e.message)}}
+};
+
+// ============================================================
+// RULES
+// ============================================================
+const Rules={
+  show(){
+    if(!currentSeason)return;UI.show('screen-rules');
+    const r=currentSeason.rules||{};
+    document.getElementById('r-fg').value=r.fgAllowed!==false?'1':'0';
+    document.getElementById('r-xpk').value=r.xpKickAllowed!==false?'1':'0';
+    document.getElementById('r-punts').value=r.puntsAllowed!==false?'1':'0';
+    document.getElementById('r-punt-yd').value=r.puntDeclaredYd||40;
+    document.getElementById('r-after').value=r.afterScoreYd||14;
+    document.getElementById('r-tb').value=r.touchbackYd||20;
+    document.getElementById('r-safe').value=r.safetyMethod||'freekick';
+    document.getElementById('r-safe-k-yd').value=r.safetyKickYd||20;
+    document.getElementById('r-safe-p-yd').value=r.safetyPlaceYd||40;
+    this.vis();
+  },
+  vis(){
+    document.getElementById('r-fg-xp-wrap').classList.toggle('hidden',document.getElementById('r-fg').value==='0');
+    document.getElementById('r-punt-alt').classList.toggle('hidden',document.getElementById('r-punts').value==='1');
+    const m=document.getElementById('r-safe').value;
+    document.getElementById('r-safe-kick').classList.toggle('hidden',m!=='freekick');
+    document.getElementById('r-safe-place').classList.toggle('hidden',m!=='yardline');
+  },
+  async save(){
+    const rules={
+      fgAllowed:document.getElementById('r-fg').value==='1',
+      xpKickAllowed:document.getElementById('r-xpk').value==='1',
+      puntsAllowed:document.getElementById('r-punts').value==='1',
+      puntDeclaredYd:parseInt(document.getElementById('r-punt-yd').value)||40,
+      afterScoreYd:parseInt(document.getElementById('r-after').value)||14,
+      touchbackYd:parseInt(document.getElementById('r-tb').value)||20,
+      safetyMethod:document.getElementById('r-safe').value,
+      safetyKickYd:parseInt(document.getElementById('r-safe-k-yd').value)||20,
+      safetyPlaceYd:parseInt(document.getElementById('r-safe-p-yd').value)||40
+    };
+    try{
+      await API.put('/seasons/'+currentSeason.id,{rules});
+      currentSeason.rules=rules;
+      alert('Rules saved!');Seasons.showDash();
+    }catch(e){alert(e.message)}
+  }
+};
+
+// ============================================================
+// GAMES
+// ============================================================
+let currentGame=null;
+let gameState={}; // local game state (ballPos, down, etc.)
+let gamePlays=[]; // plays loaded from DB
+
+const Games={
+  showNew(){if(!currentSeason)return;UI.show('screen-new-game')},
+  async start(){
+    const opp=document.getElementById('inp-opp').value.trim();
+    if(!opp){alert('Enter opponent');return}
+    const ha=document.querySelector('[name="rg-ha"]:checked').value;
+    const fl=parseInt(document.querySelector('[name="rg-fl"]:checked').value);
+    const st=document.querySelector('[name="rg-st"]:checked').value;
+    const r=currentSeason.rules;
+    const state={possession:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2};
+    try{
+      const res=await API.post(`/seasons/${currentSeason.id}/games`,{opponent:opp,homeAway:ha,fieldLength:fl,gameState:state});
+      currentGame={id:res.id,opponent:opp,homeAway:ha,fieldLength:fl,teamScore:0,oppScore:0,completed:false};
+      gameState=state;gamePlays=[];
+      GameUI.init();
+    }catch(e){alert(e.message)}
+  },
+  async loadHistory(){
+    if(!currentSeason)return;UI.show('screen-history');
+    try{
+      const games=await API.get(`/seasons/${currentSeason.id}/games`);
+      const el=document.getElementById('history-el');
+      if(!games.length){el.innerHTML='<div class="card">No games yet.</div>';return}
+      el.innerHTML=games.map(g=>{
+        const r=g.team_score>g.opp_score?'W':g.team_score<g.opp_score?'L':'T';
+        return`<div class="card"><h3>${g.home_away==='home'?'🏠':'✈️'} vs ${g.opponent}</h3><p><strong>${g.team_score}–${g.opp_score}</strong> (${r})</p>${g.completed?`<button class="btn btn-sm btn-secondary" onclick="Games.summary(${g.id})">Summary</button>`:`<button class="btn btn-sm btn-primary" onclick="Games.resume(${g.id})">Resume</button>`}</div>`;
+      }).join('');
+    }catch(e){alert(e.message)}
+  },
+  async resume(gid){
+    try{
+      const games=await API.get(`/seasons/${currentSeason.id}/games`);
+      const g=games.find(x=>x.id===gid);if(!g)return;
+      currentGame={id:g.id,opponent:g.opponent,homeAway:g.home_away,fieldLength:g.field_length,teamScore:g.team_score,oppScore:g.opp_score,completed:g.completed};
+      gameState=g.game_state||{possession:'offense',ballPos:16,down:1,firstDownLine:20,fieldLength:g.field_length,mid:g.field_length/2};
+      gamePlays=await API.get(`/games/${gid}/plays`);
+      GameUI.init();
+    }catch(e){alert(e.message)}
+  },
+  async summary(gid){
+    UI.show('screen-summary');
+    try{
+      const games=await API.get(`/seasons/${currentSeason.id}/games`);
+      const g=games.find(x=>x.id===gid);if(!g)return;
+      const plays=await API.get(`/games/${gid}/plays`);
+      const teamName=localStorage.getItem('ff_team_name')||'Us';
+      document.getElementById('summary-el').innerHTML=`
+        <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
+        <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p></div>
+        <div class="card"><h3>Plays</h3><div class="play-log">${plays.map((p,i)=>`<div class="play-log-item"><strong>#${i+1}</strong> ${p.description}</div>`).join('')||'<div class="play-log-item">No plays</div>'}</div></div>`;
+    }catch(e){alert(e.message)}
+  }
+};
+
+// ============================================================
+// GAME ENGINE (same logic as before, runs client-side)
+// ============================================================
+const Engine={
+  nextFD(pos,fl){const n=Math.ceil((pos+0.001)/20)*20;return Math.min(n,fl)},
+  advance(yds){
+    gameState.ballPos+=yds;
+    if(gameState.ballPos>=gameState.fieldLength){gameState.ballPos=gameState.fieldLength;return'td'}
+    if(gameState.ballPos<=0){gameState.ballPos=0;return'safety'}
+    if(gameState.ballPos>=gameState.firstDownLine){gameState.down=1;gameState.firstDownLine=this.nextFD(gameState.ballPos,gameState.fieldLength);return'firstdown'}
+    gameState.down++;if(gameState.down>4)return'turnover';return'ok'
+  },
+  advanceDown(){gameState.down++;if(gameState.down>4)return'turnover';return'ok'},
+  switchDef(pos){gameState.possession='defense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
+  switchOff(pos){gameState.possession='offense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
+  turnover(){const np=gameState.fieldLength-gameState.ballPos;if(gameState.possession==='offense')this.switchDef(Math.max(1,np));else this.switchOff(Math.max(1,np))},
+  handleSafety(scoringTeam){
+    const r=currentSeason.rules;
+    if(r.safetyMethod==='freekick'){if(scoringTeam==='team')this.switchOff(r.safetyKickYd||20);else this.switchDef(r.safetyKickYd||20)}
+    else{if(scoringTeam==='team')this.switchOff(r.safetyPlaceYd||40);else this.switchDef(r.safetyPlaceYd||40)}
+  }
+};
+
+// ============================================================
+// GAME UI
+// ============================================================
+const GameUI={
+  init(){
+    UI.show('screen-game');
+    const teamName=localStorage.getItem('ff_team_name')||'Us';
+    document.getElementById('g-us-n').textContent=teamName;
+    document.getElementById('g-op-n').textContent=currentGame.opponent;
+    document.getElementById('panel-xp').classList.add('hidden');
+    document.getElementById('game-ctrls').classList.remove('hidden');
+    document.getElementById('play-flow').classList.remove('hidden');
+    this.refresh();Flow.restart();
+  },
+  refresh(){
+    document.getElementById('g-us-s').textContent=currentGame.teamScore;
+    document.getElementById('g-op-s').textContent=currentGame.oppScore;
+    const dn=['1st','2nd','3rd','4th'][gameState.down-1]||'4th';
+    const toGo=gameState.firstDownLine>=gameState.fieldLength?'Goal':(gameState.firstDownLine-gameState.ballPos);
+    document.getElementById('g-down').textContent=`${dn} & ${toGo}`;
+    document.getElementById('g-yd').textContent=this.fmtYd();
+    document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
+    const lel=document.getElementById('play-log-el');
+    if(!gamePlays.length)lel.innerHTML='<div class="play-log-item">No plays yet</div>';
+    else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>`<div class="play-log-item"><strong>#${gamePlays.length-i}</strong> ${p.description||p.desc||''}</div>`).join('');
+  },
+  fmtYd(){
+    if(gameState.ballPos<=gameState.mid)return`-${gameState.ballPos} (Own ${gameState.ballPos})`;
+    const rem=gameState.fieldLength-gameState.ballPos;return`+${gameState.ballPos-gameState.mid} (Opp ${rem})`;
+  }
+};
+
+// ============================================================
+// PLAY FLOW (buttons + keypad, same step-by-step as before)
+// ============================================================
+const Flow={
+  current:{},playerQueue:[],
+
+  restart(){
+    this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null};
+    document.getElementById('step-type').classList.remove('hidden');
+    document.getElementById('step-result').classList.add('hidden');
+    document.getElementById('step-player').classList.add('hidden');
+    document.getElementById('step-yards').classList.add('hidden');
+    document.getElementById('step-confirm').classList.add('hidden');
+    this.renderTypeButtons();
+  },
+
+  renderTypeButtons(){
+    const el=document.getElementById('type-btns');
+    if(gameState.possession==='offense'){
+      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('punt')">🦵 Punt</button><button class="play-btn" onclick="Flow.pickType('fg')">🏈 Field Goal</button>`;
+    }else{
+      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('puntreturn')">🦵 Punt Return</button><button class="play-btn" onclick="Flow.pickType('fgblock')">🖐️ FG Block</button>`;
+    }
+  },
+
+  pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');this.showResults(t)},
+
+  showResults(t){
+    const el=document.getElementById('result-btns');let btns='';
+    if(gameState.possession==='offense'){
+      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">❌ Incomplete</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#ffebee;color:#c62828">🔴 INT</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#fff3e0;color:#e65100">💥 Sack</button>`;
+      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">✅ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#ffebee;color:#c62828">📉 Loss</button>`;
+      else if(t==='punt')btns=`<button class="play-btn" onclick="Flow.pickResult('down')">⬇️ Down/Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickResult('return')">↩️ Returned</button><button class="play-btn" onclick="Flow.pickResult('td')" style="background:#ffebee;color:#c62828">🏈 Return TD</button>`;
+      else if(t==='fg')btns=`<button class="play-btn" onclick="Flow.pickResult('good')" style="background:#e8f5e9;color:#2e7d32">✅ Good!</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')" style="background:#ffebee;color:#c62828">❌ Wide / Hit Endzone</button>`;
+    }else{
+      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">🛡️ Defended</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#e8f5e9;color:#2e7d32">🔥 INT!</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#e8f5e9;color:#2e7d32">💥 Sack</button>`;
+      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">➡️ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#e8f5e9;color:#2e7d32">📉 Loss</button>`;
+      else if(t==='puntreturn')btns=`<button class="play-btn" onclick="Flow.pickResult('return')">↩️ Return</button><button class="play-btn" onclick="Flow.pickResult('faircatch')">✋ Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button>`;
+      else if(t==='fgblock')btns=`<button class="play-btn" onclick="Flow.pickResult('blocked')" style="background:#e8f5e9;color:#2e7d32">🖐️ Blocked!</button><button class="play-btn" onclick="Flow.pickResult('good')">✅ FG Good (opp)</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')">❌ Wide / Endzone</button>`;
+    }
+    document.getElementById('result-btns').innerHTML=btns;
+    document.getElementById('step-result').classList.remove('hidden');
+  },
+
+  pickResult(r){this.current.result=r;document.getElementById('step-result').classList.add('hidden');this.nextSteps()},
+
+  nextSteps(){
+    const c=this.current,t=c.type,r=c.result;this.playerQueue=[];
+    if(gameState.possession==='offense'){
+      if(t==='pass'){this.playerQueue.push({l:'QB #',k:'qb'});if(r==='complete')this.playerQueue.push({l:'Receiver #',k:'receiver'})}
+      else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
+      else if(t==='punt')this.playerQueue.push({l:'Punter #',k:'punter'});
+      else if(t==='fg')this.playerQueue.push({l:'Kicker #',k:'kicker'});
+    }else{
+      if(t==='pass'){if(r==='complete'||r==='sack')this.playerQueue.push({l:'Flag Pulled By #',k:'flagPuller'});if(r==='incomplete')this.playerQueue.push({l:'Defended By #',k:'defender'});if(r==='interception')this.playerQueue.push({l:'Intercepted By #',k:'interceptor'})}
+      else if(t==='run')this.playerQueue.push({l:'Flag Pulled By #',k:'flagPuller'});
+      else if(t==='puntreturn'&&r==='return')this.playerQueue.push({l:'Returned By #',k:'returner'});
+      else if(t==='fgblock'&&r==='blocked')this.playerQueue.push({l:'Blocked By #',k:'blocker'});
+      else if(t==='fgblock'&&r==='short')this.playerQueue.push({l:'Returned By #',k:'returner'});
+    }
+    this.askNextPlayer();
+  },
+
+  askNextPlayer(){
+    if(this.playerQueue.length){const p=this.playerQueue.shift();Keypad.start(p.l,p.k)}
+    else this.askYards()
+  },
+
+  askYards(){
+    const c=this.current,t=c.type,r=c.result;let need=false,label='Yards';
+    if(gameState.possession==='offense'){
+      if(t==='pass'&&(r==='complete'||r==='sack')){need=true;label=r==='sack'?'Yards Lost':'Yards Gained'}
+      else if(t==='run'){need=true;label=r==='loss'?'Yards Lost':'Yards Gained'}
+      else if(t==='punt'&&(r==='down'||r==='return')){need=true;label='Punt Distance'}
+      else if(t==='fg'){need=true;label='Kicked From Yard Line'}
+    }else{
+      if(t==='pass'&&(r==='complete'||r==='sack')){need=true;label=r==='sack'?'Yards Lost':'Yards Opp Gained'}
+      else if(t==='pass'&&r==='interception'){need=true;label='INT Return Yards'}
+      else if(t==='run'){need=true;label=r==='loss'?'Yards Lost':'Yards Opp Gained'}
+      else if(t==='puntreturn'&&(r==='return'||r==='faircatch')){need=true;label=r==='return'?'Punt Distance':'Punt Distance'}
+      // Defense FG short: skip to secondary result (touchback/returned/td)
+      else if(t==='fgblock'&&r==='short'){
+        c._fgAsked=true;
+        document.getElementById('result-label').textContent='Short FG — what happened?';
+        document.getElementById('result-btns').innerHTML=`<button class="play-btn" onclick="Flow.pickFGShortResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickFGShortResult('return')">↩️ Returned</button><button class="play-btn" onclick="Flow.pickFGShortResult('td')" style="background:#e8f5e9;color:#2e7d32">🏈 Returned for TD!</button>`;
+        document.getElementById('step-result').classList.remove('hidden');
+        return;
+      }
+    }
+    if(need){YardPad.start(label)}else this.showConfirm()
+  },
+
+  onYardsDone(val){
+    const c=this.current;
+    document.getElementById('step-yards').classList.add('hidden');
+    if(c.type==='punt'&&c.result==='return'&&!c._puntDist){c._puntDist=val;YardPad.start('Return Yards');return}
+    if(c.type==='puntreturn'&&c.result==='return'&&!c._puntDist){c._puntDist=val;YardPad.start('Return Yards');return}
+    if((c.type==='punt'||c.type==='puntreturn')&&c._puntDist&&!c._retYds){c._retYds=val;this.showConfirm();return}
+    // FG short: after entering yard line, ask what happened on the return
+    if((c.type==='fg'||c.type==='fgblock')&&(c.result==='short')&&!c._fgAsked){
+      c.yards=val;c._fgAsked=true;
+      // Show secondary result: touchback, returned, or returned for TD
+      document.getElementById('result-label').textContent='Short FG — what happened?';
+      document.getElementById('result-btns').innerHTML=`<button class="play-btn" onclick="Flow.pickFGShortResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickFGShortResult('return')">↩️ Returned</button><button class="play-btn" onclick="Flow.pickFGShortResult('td')" style="background:#ffebee;color:#c62828">🏈 Returned for TD</button>`;
+      document.getElementById('step-result').classList.remove('hidden');
+      return;
+    }
+    // FG short returned: this is the return yards
+    if((c.type==='fg'||c.type==='fgblock')&&c._fgShortResult==='return'&&!c._fgRetYds){c._fgRetYds=val;this.showConfirm();return}
+    c.yards=val;this.showConfirm()
+  },
+
+  pickFGShortResult(r){
+    const c=this.current;
+    c._fgShortResult=r;
+    document.getElementById('step-result').classList.add('hidden');
+    if(r==='return'){YardPad.start('Return Yards');return}
+    // touchback or td — go straight to confirm
+    this.showConfirm();
+  },
+
+  showConfirm(){
+    document.getElementById('step-player').classList.add('hidden');
+    document.getElementById('step-yards').classList.add('hidden');
+    document.getElementById('confirm-summary').textContent=this.buildDesc();
+    document.getElementById('step-confirm').classList.remove('hidden')
+  },
+
+  buildDesc(){
+    const c=this.current,p=c.players;let d='';
+    if(gameState.possession==='offense'){
+      if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
+      else if(c.type==='run'){d=c.result==='gain'?`Run #${p.carrier} +${c.yards}yds`:`Run #${p.carrier} -${Math.abs(c.yards)}yds`}
+      else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed`;else if(c.result==='return')d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
+      else if(c.type==='fg'){const dist=c.yards+10;if(c.result==='good')d=`FG GOOD #${p.kicker} (${dist}yd)`;else if(c.result==='wide')d=`FG NO GOOD #${p.kicker} (${dist}yd) - Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`FG SHORT #${p.kicker} (${dist}yd) - Touchback`;else if(c._fgShortResult==='return')d=`FG SHORT #${p.kicker} (${dist}yd) - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`FG SHORT #${p.kicker} (${dist}yd) - RETURNED FOR TD!`}}
+    }else{
+      if(c.type==='pass'){if(c.result==='complete')d=`Opp complete +${c.yards}yds (flag #${p.flagPuller})`;else if(c.result==='incomplete')d=`Pass defended by #${p.defender}`;else if(c.result==='interception')d=`INT by #${p.interceptor} ret ${c.yards}yds`;else if(c.result==='sack')d=`SACK by #${p.flagPuller} -${Math.abs(c.yards)}yds`}
+      else if(c.type==='run'){d=c.result==='gain'?`Opp run +${c.yards}yds (flag #${p.flagPuller})`:`Opp run -${Math.abs(c.yards)}yds (flag #${p.flagPuller})`}
+      else if(c.type==='puntreturn'){if(c.result==='return')d=`Punt return #${p.returner} ${c._retYds||c.yards}yds`;else if(c.result==='faircatch')d=`Punt fair catch (${c._puntDist||c.yards}yd punt)`;else d=`Punt touchback`}
+      else if(c.type==='fgblock'){if(c.result==='blocked')d=`FG BLOCKED by #${p.blocker}`;else if(c.result==='good')d=`Opp FG Good (+3)`;else if(c.result==='wide')d=`Opp FG Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`Opp FG Short - Touchback`;else if(c._fgShortResult==='return')d=`Opp FG Short - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`Opp FG Short - RETURNED FOR TD!`}}
+    }
+    return d;
+  },
+
+  async confirm(){
+    const c=this.current,r=currentSeason.rules;
+    const prevState=JSON.parse(JSON.stringify(gameState));
+    const desc=this.buildDesc();let resultStr='';
+
+    // APPLY ENGINE
+    if(gameState.possession==='offense'){
+      if(c.type==='pass'){
+        if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
+        else if(c.result==='incomplete'){resultStr=Engine.advanceDown()}
+        else if(c.result==='interception'){Engine.turnover();resultStr='turnover'}
+        else if(c.result==='sack'){resultStr=Engine.advance(-Math.abs(c.yards))}
+      }else if(c.type==='run'){
+        const yds=c.result==='gain'?c.yards:-Math.abs(c.yards);resultStr=Engine.advance(yds)
+      }else if(c.type==='punt'){
+        const dist=c._puntDist||c.yards||30;
+        if(c.result==='touchback'){Engine.switchDef(r.touchbackYd||20)}
+        else if(c.result==='down'){let land=gameState.ballPos+dist;if(land>=gameState.fieldLength)land=gameState.fieldLength;Engine.switchDef(Math.max(1,gameState.fieldLength-land))}
+        else if(c.result==='return'){let land=prevState.ballPos+(c._puntDist||0);if(land>gameState.fieldLength)land=gameState.fieldLength;const oppStart=gameState.fieldLength-land+(c._retYds||c.yards||0);Engine.switchDef(Math.max(1,Math.min(oppStart,gameState.fieldLength-1)))}
+        else if(c.result==='td'){currentGame.oppScore+=6}
+        resultStr='possession'
+      }else if(c.type==='fg'){
+        g.plays.push(play);
+        if(c.result==='good'){currentGame.teamScore+=3;Engine.switchDef(r.afterScoreYd||14)}
+        else if(c.result==='wide'){
+          // Wide or hit endzone = touchback
+          Engine.switchDef(r.touchbackYd||20)
+        }else if(c.result==='short'){
+          // Short = returnable like a punt
+          if(c._fgShortResult==='touchback'){Engine.switchDef(r.touchbackYd||20)}
+          else if(c._fgShortResult==='return'){
+            // Opponent returns from where ball landed (short of endzone)
+            const retYds=c._fgRetYds||0;
+            // Ball was kicked from c.yards yard line. It fell short. Opp catches near endzone area.
+            // They start at touchback spot + return yards (simplified)
+            const oppStart=(r.touchbackYd||20)+retYds;
+            Engine.switchDef(Math.max(1,Math.min(oppStart,gameState.fieldLength-1)))
+          }else if(c._fgShortResult==='td'){
+            currentGame.oppScore+=6;
+            Store.save&&0;GameUI.refresh();XP.show('opponent');return
+          }
+        }
+        resultStr='possession'
+      }
+    }else{
+      if(c.type==='pass'){
+        if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
+        else if(c.result==='incomplete'){resultStr=Engine.advanceDown()}
+        else if(c.result==='interception'){let ourStart=gameState.fieldLength-gameState.ballPos+c.yards;if(ourStart>=gameState.fieldLength){currentGame.teamScore+=6;resultStr='td'}else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)));resultStr='possession'}}
+        else if(c.result==='sack'){resultStr=Engine.advance(-Math.abs(c.yards))}
+      }else if(c.type==='run'){
+        const yds=c.result==='gain'?c.yards:-Math.abs(c.yards);resultStr=Engine.advance(yds)
+      }else if(c.type==='puntreturn'){
+        if(c.result==='touchback'){Engine.switchOff(r.touchbackYd||20)}
+        else if(c.result==='faircatch'){const dist=c._puntDist||c.yards||30;let ourStart=(gameState.fieldLength-prevState.ballPos)-dist;Engine.switchOff(Math.max(1,ourStart<1?r.touchbackYd:ourStart))}
+        else if(c.result==='return'){const dist=c._puntDist||30;const retYds=c._retYds||0;let land=(gameState.fieldLength-prevState.ballPos)-dist;if(land<0)land=0;let ourStart=land+retYds;if(ourStart>=gameState.fieldLength){currentGame.teamScore+=6;resultStr='td'}else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)))}}
+        resultStr=resultStr||'possession'
+      }else if(c.type==='fgblock'){
+        g.plays.push(play);
+        if(c.result==='blocked'){Engine.switchOff(Math.max(1,gameState.fieldLength-prevState.ballPos))}
+        else if(c.result==='good'){currentGame.oppScore+=3;Engine.switchOff(r.afterScoreYd||14)}
+        else if(c.result==='wide'){Engine.switchOff(r.touchbackYd||20)}
+        else if(c.result==='short'){
+          // Short FG miss on defense — we can return it
+          if(c._fgShortResult==='touchback'){Engine.switchOff(r.touchbackYd||20)}
+          else if(c._fgShortResult==='return'){
+            const retYds=c._fgRetYds||0;
+            const ourStart=(r.touchbackYd||20)+retYds;
+            if(ourStart>=gameState.fieldLength){currentGame.teamScore+=6;resultStr='td';Store.save&&0;GameUI.refresh();XP.show('team');return}
+            Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)))
+          }else if(c._fgShortResult==='td'){
+            currentGame.teamScore+=6;
+            Store.save&&0;GameUI.refresh();XP.show('team');return
+          }
+        }
+        resultStr='possession'
+      }
+    }
+
+    // Handle special results
+    let finalDesc=desc;
+    if(resultStr==='td'){
+      if(gameState.possession==='offense'||c.type==='puntreturn'||(c.type==='pass'&&c.result==='interception'&&gameState.possession!=='offense')){
+        if(c.type!=='punt')currentGame.teamScore+=6;
+        finalDesc+=' → TOUCHDOWN!';
+      }else{currentGame.oppScore+=6;finalDesc+=' → OPP TOUCHDOWN!'}
+    }else if(resultStr==='safety'){
+      if(gameState.possession==='offense'){currentGame.oppScore+=2;finalDesc+=' → SAFETY (opp +2)';Engine.handleSafety('opponent')}
+      else{currentGame.teamScore+=2;finalDesc+=' → SAFETY (us +2)';Engine.handleSafety('team')}
+    }else if(resultStr==='turnover'){
+      if(c.result!=='interception')finalDesc+=' → Turnover on downs!';
+      if(c.type!=='pass'||c.result!=='interception')Engine.turnover()
+    }
+
+    // Save play to server
+    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:c.players,yards:c.yards||0,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc};
+    gamePlays.push(play);
+    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){}
+    // Update game state on server
+    try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+
+    // Check for XP
+    if(resultStr==='td'||(c.type==='punt'&&c.result==='td')){
+      const whoScored=(gameState.possession==='offense'&&c.type!=='punt')||(c.type==='puntreturn'&&c.result==='return')||(c.type==='pass'&&c.result==='interception'&&prevState.possession==='defense')?'team':'opponent';
+      GameUI.refresh();XP.show(whoScored==='team'||(c.type!=='punt')?'team':'opponent');
+      // Simplified: determine who to show XP for
+      if(c.type==='punt'&&c.result==='td')XP.show('opponent');
+      else XP.show('team');
+      return;
+    }
+
+    GameUI.refresh();Flow.restart()
+  }
+};
+
+// ============================================================
+// KEYPAD
+// ============================================================
+const Keypad={
+  value:'',key:'',
+  start(label,key){this.value='';this.key=key;document.getElementById('keypad-label').textContent=label;document.getElementById('keypad-display').textContent='-';document.getElementById('step-player').classList.remove('hidden')},
+  press(d){if(this.value.length>=2)return;this.value+=d;document.getElementById('keypad-display').textContent='#'+this.value},
+  clear(){this.value='';document.getElementById('keypad-display').textContent='-'},
+  done(){if(!this.value){alert('Enter a number');return}Flow.current.players[this.key]=this.value;document.getElementById('step-player').classList.add('hidden');Flow.askNextPlayer()}
+};
+
+// ============================================================
+// YARD PAD
+// ============================================================
+const YardPad={
+  value:'',negative:false,
+  start(label){this.value='';this.negative=false;document.getElementById('yards-label').textContent=label;document.getElementById('yards-display').textContent='0';document.getElementById('step-yards').classList.remove('hidden')},
+  press(d){if(this.value.length>=3)return;this.value+=d;this.render()},
+  negate(){this.negative=!this.negative;this.render()},
+  render(){document.getElementById('yards-display').textContent=(this.negative?'-':'')+(this.value||'0')},
+  done(){const v=parseInt(this.value||'0');document.getElementById('step-yards').classList.add('hidden');Flow.onYardsDone(this.negative?-v:v)}
+};
+
+// ============================================================
+// EXTRA POINT
+// ============================================================
+const XP={
+  team:'team',pts:0,meth:'',
+  show(team){
+    this.team=team;this.pts=0;this.meth='';
+    document.getElementById('play-flow').classList.add('hidden');
+    document.getElementById('game-ctrls').classList.add('hidden');
+    document.getElementById('panel-xp').classList.remove('hidden');
+    document.getElementById('xp-method').classList.add('hidden');
+    document.getElementById('xp-result').classList.add('hidden');
+    document.getElementById('xp-btn-1').classList.remove('selected');
+    document.getElementById('xp-btn-2').classList.remove('selected');
+    const teamName=localStorage.getItem('ff_team_name')||'Us';
+    document.getElementById('xp-info').textContent=team==='team'?`${teamName} scored! Extra point:`:`${currentGame.opponent} scored! Their XP:`;
+    document.getElementById('xp-btn-kick').classList.toggle('hidden',!currentSeason.rules.xpKickAllowed);
+    GameUI.refresh();
+  },
+  choose(p){this.pts=p;document.getElementById('xp-btn-1').classList.toggle('selected',p===1);document.getElementById('xp-btn-2').classList.toggle('selected',p===2);
+    if(p===1)document.getElementById('xp-method').classList.remove('hidden');
+    else{document.getElementById('xp-method').classList.add('hidden');document.getElementById('xp-result').classList.remove('hidden')}
+  },
+  method(m){this.meth=m;document.getElementById('xp-btn-kick').classList.toggle('selected',m==='kick');document.getElementById('xp-btn-set').classList.toggle('selected',m==='setplay');document.getElementById('xp-result').classList.remove('hidden')},
+  async result(r){
+    const scored=r==='good'?this.pts:0;
+    if(this.team==='team')currentGame.teamScore+=scored;else currentGame.oppScore+=scored;
+    const mLabel=this.pts===2?'2pt set play':(this.meth==='kick'?'1pt kick':'1pt set play');
+    const desc=`${this.team==='team'?'Our':'Opp'} XP: ${mLabel} - ${r==='good'?'GOOD':'No Good'}`;
+    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{},yards:0,downBefore:0,ballPosBefore:0,description:desc};
+    gamePlays.push(play);
+    try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){}
+    // After XP, other team gets ball
+    const afterYd=currentSeason.rules.afterScoreYd||16;
+    if(this.team==='team')Engine.switchDef(afterYd);else Engine.switchOff(afterYd);
+    try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+    document.getElementById('panel-xp').classList.add('hidden');
+    document.getElementById('play-flow').classList.remove('hidden');
+    document.getElementById('game-ctrls').classList.remove('hidden');
+    GameUI.refresh();Flow.restart()
+  }
+};
+
+// ============================================================
+// GAME ACTIONS
+// ============================================================
+const GameActions={
+  manualSwitch(){
+    const r=currentSeason.rules;
+    if(gameState.possession==='offense')Engine.switchDef(r.afterScoreYd||16);else Engine.switchOff(r.afterScoreYd||16);
+    API.put(`/games/${currentGame.id}`,{gameState}).catch(()=>{});
+    GameUI.refresh();Flow.restart()
+  },
+  async undo(){
+    if(!gamePlays.length){alert('Nothing to undo');return}if(!confirm('Undo?'))return;
+    gamePlays.pop();
+    try{await API.del(`/games/${currentGame.id}/plays/last`)}catch(e){}
+    // Re-derive state from server
+    try{
+      const games=await API.get(`/seasons/${currentSeason.id}/games`);
+      const g=games.find(x=>x.id===currentGame.id);
+      if(g){currentGame.teamScore=g.team_score;currentGame.oppScore=g.opp_score;gameState=g.game_state}
+    }catch(e){}
+    GameUI.refresh();Flow.restart()
+  },
+  async endGame(){
+    if(!confirm('End game?'))return;
+    currentGame.completed=true;
+    try{await API.put(`/games/${currentGame.id}`,{completed:true,teamScore:currentGame.teamScore,oppScore:currentGame.oppScore})}catch(e){}
+    Games.summary(currentGame.id)
+  },
+  toggleLog(){document.getElementById('log-card').classList.toggle('hidden')}
+};
+
+// ============================================================
+// INIT
+// ============================================================
+Auth.check();
+</script>
+</body>
+</html>
