@@ -176,7 +176,7 @@ app.post('/api/seasons', authenticate, async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Season name required' });
     const rulesObj = rules || {
       fgAllowed: true, xpKickAllowed: true, puntsAllowed: true,
-      puntDeclaredYd: 40, afterScoreYd: 14, touchbackYd: 20,
+      puntDeclaredYd: 40, afterScoreYd: 14, touchbackYd: 14,
       safetyMethod: 'freekick', safetyKickYd: 20, safetyPlaceYd: 40
     };
     const season = await supaInsert('seasons', { team_id: req.teamId, name, rules: rulesObj });
