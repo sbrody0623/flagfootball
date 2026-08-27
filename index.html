@@ -1057,8 +1057,24 @@ const Flow={
 
   nextSteps(){
     const c=this.current,t=c.type,r=c.result;this.playerQueue=[];
-    // If penalty result, go to penalty picker
-    if(r==='penalty'){this.showPenaltyPicker();return}
+    // If penalty result on a play, ask for players first (to credit yards), then penalty
+    if(r==='penalty'&&t!=='penalty'){
+      // For pass/run penalties, ask who was involved
+      if(gameState.possession==='offense'){
+        if(t==='pass')this.playerQueue.push({l:'QB #',k:'qb'});
+        else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
+        else if(t==='punt')this.playerQueue.push({l:'Punter #',k:'punter'});
+        else if(t==='fg')this.playerQueue.push({l:'Kicker #',k:'kicker'});
+      }else{
+        if(t==='pass')this.playerQueue.push({l:'Flag Pulled By # (if any)',k:'flagPuller'});
+        else if(t==='run')this.playerQueue.push({l:'Flag Pulled By # (if any)',k:'flagPuller'});
+      }
+      // After players, the askYards path won't trigger since result is penalty
+      // Instead we'll fall through to showPenaltyPicker
+      this.askNextPlayer();return;
+    }
+    // Pre-snap penalty — go straight to picker
+    if(t==='penalty'){this.showPenaltyPicker();return}
     if(gameState.possession==='offense'){
       if(t==='pass'){this.playerQueue.push({l:'QB #',k:'qb'});if(r==='complete')this.playerQueue.push({l:'Receiver #',k:'receiver'})}
       else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
@@ -1081,6 +1097,8 @@ const Flow={
 
   askYards(){
     const c=this.current,t=c.type,r=c.result;let need=false,label='Yards';
+    // If penalty result, go to penalty picker after players are done
+    if(r==='penalty'&&t!=='penalty'){this.showPenaltyPicker();return}
     if(gameState.possession==='offense'){
       if(t==='pass'&&(r==='complete'||r==='sack')){need=true;label=r==='sack'?'Yards Lost':'Yards Gained'}
       else if(t==='pass'&&r==='interception'){need=true;label='INT Return Yards (by opponent)'}
@@ -1122,6 +1140,11 @@ const Flow={
     // FG short returned: this is the return yards
     if((c.type==='fg'||c.type==='fgblock')&&c._fgShortResult==='return'&&!c._fgRetYds){c._fgRetYds=val;this.showConfirm();return}
     // Penalty yards
+    if((c.result==='penalty'||c.type==='penalty')&&c._penaltySpot==='spot'&&!c._spotYardLine){
+      // This is the spot of foul yard line
+      c._spotYardLine=val;
+      YardPad.start('Penalty Yards');return;
+    }
     if(c.result==='penalty'||c.type==='penalty'){c._penaltyYds=val;c.yards=val;this.showConfirm();return}
     c.yards=val;this.showConfirm()
   },
@@ -1176,8 +1199,14 @@ const Flow={
       return `<button class="play-btn" style="${style};font-size:0.8rem;padding:12px 6px" onclick="Flow.pickPenalty('${p.code}')">${p.label}</button>`;
     }).join('');
     document.getElementById('result-label').textContent='Select Penalty';
+    btns+=`<button class="play-btn" onclick="Flow.cancelPenalty()" style="background:#f5f5f5;color:var(--muted)">✗ Declined / Cancel</button>`;
     document.getElementById('result-btns').innerHTML=btns;
     document.getElementById('step-result').classList.remove('hidden');
+  },
+
+  cancelPenalty(){
+    document.getElementById('step-result').classList.add('hidden');
+    Flow.restart();
   },
 
   pickPenalty(code){
@@ -1197,7 +1226,24 @@ const Flow={
     const c=this.current;
     c._penaltySpot=spot;
     document.getElementById('step-result').classList.add('hidden');
-    YardPad.start('Penalty Yards');
+    if(spot==='spot'){
+      // Ask: own side or opponent side
+      document.getElementById('result-label').textContent='Spot of foul — which side?';
+      document.getElementById('result-btns').innerHTML=`
+        <button class="play-btn" onclick="Flow.pickSpotSide('own')">📍 Our Side</button>
+        <button class="play-btn" onclick="Flow.pickSpotSide('opp')">📍 Their Side</button>`;
+      document.getElementById('step-result').classList.remove('hidden');
+    }else{
+      // LOS — just ask penalty yards
+      YardPad.start('Penalty Yards');
+    }
+  },
+
+  pickSpotSide(side){
+    const c=this.current;
+    c._spotSide=side;
+    document.getElementById('step-result').classList.add('hidden');
+    YardPad.start('Spot of Foul (Yard Line)');
   },
 
   showConfirm(){
@@ -1212,9 +1258,14 @@ const Flow={
     // Penalty description
     if(c.result==='penalty'||c.type==='penalty'){
       const pen=c._penalty||'Penalty';
-      const yds=c._penaltyYds||0;
-      const spot=c._penaltySpot==='spot'?'spot of foul':'LOS';
-      d=`🚩 ${pen} ${yds}yds (from ${spot})`;
+      const penYds=c._penaltyYds||0;
+      if(c._penaltySpot==='spot'){
+        const side=c._spotSide==='own'?'own':'opp';
+        const spotYd=c._spotYardLine||0;
+        d=`🚩 ${pen} ${penYds}yds (spot: ${side} ${spotYd})`;
+      }else{
+        d=`🚩 ${pen} ${penYds}yds (from LOS)`;
+      }
       return d;
     }
     if(gameState.possession==='offense'){
@@ -1241,21 +1292,46 @@ const Flow={
     if(c.result==='penalty'||c.type==='penalty'){
       const pen=c._penalty||'';
       const penYds=Math.abs(c._penaltyYds||0);
-      if(pen.startsWith('O')){
-        // Offense penalty — lose yards (ball moves backward)
-        gameState.ballPos=Math.max(1,gameState.ballPos-penYds);
+      const isOffensePenalty=pen.startsWith('O');
+
+      if(c._penaltySpot==='spot'){
+        // Spot foul: convert spot to absolute ball position
+        const spotYd=c._spotYardLine||0;
+        let spotAbsolute;
+        if(c._spotSide==='own'){
+          spotAbsolute=spotYd; // Own 30 = 30 from our goal
+        }else{
+          spotAbsolute=gameState.fieldLength-spotYd; // Opp 20 = fieldLength - 20
+        }
+        // Apply penalty from the spot
+        if(isOffensePenalty){
+          gameState.ballPos=Math.max(1,spotAbsolute-penYds);
+        }else{
+          gameState.ballPos=Math.min(gameState.fieldLength-1,spotAbsolute+penYds);
+        }
       }else{
-        // Defense penalty — gain yards (ball moves forward)
-        gameState.ballPos=Math.min(gameState.fieldLength-1,gameState.ballPos+penYds);
+        // LOS foul: apply from current ball position
+        if(isOffensePenalty){
+          gameState.ballPos=Math.max(1,gameState.ballPos-penYds);
+        }else{
+          gameState.ballPos=Math.min(gameState.fieldLength-1,gameState.ballPos+penYds);
+        }
       }
+
       // Recalculate first down line if we crossed it
       if(gameState.ballPos>=gameState.firstDownLine){
         gameState.down=1;
         gameState.firstDownLine=Engine.nextFD(gameState.ballPos,gameState.fieldLength);
       }
+      // Also check if D penalty gives auto first down (ball past first down marker)
       // Don't advance down on penalties — replay the down
+
+      // Calculate net yards for description
+      const netYds=gameState.ballPos-prevState.ballPos;
+      const netDesc=netYds>=0?`+${netYds}yds`:`${netYds}yds`;
+
       // Save and exit
-      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:{},yards:pen.startsWith('O')?-penYds:penYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc,quarter:gameState.quarter||1,penalty:pen};
+      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:c.players||{},yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc})`,quarter:gameState.quarter||1,penalty:pen};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
       try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
