@@ -1024,9 +1024,9 @@ const Flow={
   renderTypeButtons(){
     const el=document.getElementById('type-btns');
     if(gameState.possession==='offense'){
-      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('punt')">🦵 Punt</button><button class="play-btn" onclick="Flow.pickType('fg')">🏈 Field Goal</button>`;
+      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('punt')">🦵 Punt</button><button class="play-btn" onclick="Flow.pickType('fg')">🏈 Field Goal</button><button class="play-btn" onclick="Flow.pickType('penalty')" style="background:#fff3e0;color:#e65100">🚩 Pre-Snap Penalty</button>`;
     }else{
-      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('puntreturn')">🦵 Punt Return</button><button class="play-btn" onclick="Flow.pickType('fgblock')">🖐️ FG Block</button>`;
+      el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('puntreturn')">🦵 Punt Return</button><button class="play-btn" onclick="Flow.pickType('fgblock')">🖐️ FG Block</button><button class="play-btn" onclick="Flow.pickType('penalty')" style="background:#fff3e0;color:#e65100">🚩 Pre-Snap Penalty</button>`;
     }
   },
 
@@ -1034,16 +1034,20 @@ const Flow={
 
   showResults(t){
     const el=document.getElementById('result-btns');let btns='';
+    if(t==='penalty'){
+      // Pre-snap penalty - show penalty picker directly
+      Flow.showPenaltyPicker();return;
+    }
     if(gameState.possession==='offense'){
-      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">❌ Incomplete</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#ffebee;color:#c62828">🔴 INT</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#fff3e0;color:#e65100">💥 Sack</button>`;
-      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">✅ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#ffebee;color:#c62828">📉 Loss</button>`;
-      else if(t==='punt')btns=`<button class="play-btn" onclick="Flow.pickResult('down')">⬇️ Down/Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickResult('return')">↩️ Returned</button><button class="play-btn" onclick="Flow.pickResult('td')" style="background:#ffebee;color:#c62828">🏈 Return TD</button>`;
-      else if(t==='fg')btns=`<button class="play-btn" onclick="Flow.pickResult('good')" style="background:#e8f5e9;color:#2e7d32">✅ Good!</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')" style="background:#ffebee;color:#c62828">❌ Wide / Hit Endzone</button>`;
+      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">❌ Incomplete</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#ffebee;color:#c62828">🔴 INT</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#fff3e0;color:#e65100">💥 Sack</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">✅ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#ffebee;color:#c62828">📉 Loss</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='punt')btns=`<button class="play-btn" onclick="Flow.pickResult('down')">⬇️ Down/Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickResult('return')">↩️ Returned</button><button class="play-btn" onclick="Flow.pickResult('td')" style="background:#ffebee;color:#c62828">🏈 Return TD</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='fg')btns=`<button class="play-btn" onclick="Flow.pickResult('good')" style="background:#e8f5e9;color:#2e7d32">✅ Good!</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')" style="background:#ffebee;color:#c62828">❌ Wide / Hit Endzone</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
     }else{
-      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">🛡️ Defended</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#e8f5e9;color:#2e7d32">🔥 INT!</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#e8f5e9;color:#2e7d32">💥 Sack</button>`;
-      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">➡️ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#e8f5e9;color:#2e7d32">📉 Loss</button>`;
-      else if(t==='puntreturn')btns=`<button class="play-btn" onclick="Flow.pickResult('return')">↩️ Return</button><button class="play-btn" onclick="Flow.pickResult('faircatch')">✋ Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button>`;
-      else if(t==='fgblock')btns=`<button class="play-btn" onclick="Flow.pickResult('blocked')" style="background:#e8f5e9;color:#2e7d32">🖐️ Blocked!</button><button class="play-btn" onclick="Flow.pickResult('good')">✅ FG Good (opp)</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')">❌ Wide / Endzone</button>`;
+      if(t==='pass')btns=`<button class="play-btn" onclick="Flow.pickResult('complete')">✅ Complete</button><button class="play-btn" onclick="Flow.pickResult('incomplete')">🛡️ Defended</button><button class="play-btn" onclick="Flow.pickResult('dropped')">❌ Incomplete</button><button class="play-btn" onclick="Flow.pickResult('interception')" style="background:#e8f5e9;color:#2e7d32">🔥 INT!</button><button class="play-btn" onclick="Flow.pickResult('sack')" style="background:#e8f5e9;color:#2e7d32">💥 Sack</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='run')btns=`<button class="play-btn" onclick="Flow.pickResult('gain')">➡️ Gain</button><button class="play-btn" onclick="Flow.pickResult('loss')" style="background:#e8f5e9;color:#2e7d32">📉 Loss</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='puntreturn')btns=`<button class="play-btn" onclick="Flow.pickResult('return')">↩️ Return</button><button class="play-btn" onclick="Flow.pickResult('faircatch')">✋ Fair Catch</button><button class="play-btn" onclick="Flow.pickResult('touchback')">🏁 Touchback</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
+      else if(t==='fgblock')btns=`<button class="play-btn" onclick="Flow.pickResult('blocked')" style="background:#e8f5e9;color:#2e7d32">🖐️ Blocked!</button><button class="play-btn" onclick="Flow.pickResult('good')">✅ FG Good (opp)</button><button class="play-btn" onclick="Flow.pickResult('short')" style="background:#fff3e0;color:#e65100">📉 Short (returnable)</button><button class="play-btn" onclick="Flow.pickResult('wide')">❌ Wide / Endzone</button><button class="play-btn" onclick="Flow.pickResult('penalty')" style="background:#fff3e0;color:#e65100">🚩 Penalty</button>`;
     }
     document.getElementById('result-btns').innerHTML=btns;
     document.getElementById('step-result').classList.remove('hidden');
@@ -1053,6 +1057,8 @@ const Flow={
 
   nextSteps(){
     const c=this.current,t=c.type,r=c.result;this.playerQueue=[];
+    // If penalty result, go to penalty picker
+    if(r==='penalty'){this.showPenaltyPicker();return}
     if(gameState.possession==='offense'){
       if(t==='pass'){this.playerQueue.push({l:'QB #',k:'qb'});if(r==='complete')this.playerQueue.push({l:'Receiver #',k:'receiver'})}
       else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
@@ -1115,6 +1121,8 @@ const Flow={
     }
     // FG short returned: this is the return yards
     if((c.type==='fg'||c.type==='fgblock')&&c._fgShortResult==='return'&&!c._fgRetYds){c._fgRetYds=val;this.showConfirm();return}
+    // Penalty yards
+    if(c.result==='penalty'||c.type==='penalty'){c._penaltyYds=val;c.yards=val;this.showConfirm();return}
     c.yards=val;this.showConfirm()
   },
 
@@ -1123,8 +1131,73 @@ const Flow={
     c._fgShortResult=r;
     document.getElementById('step-result').classList.add('hidden');
     if(r==='return'){YardPad.start('Return Yards');return}
-    // touchback or td — go straight to confirm
     this.showConfirm();
+  },
+
+  // PENALTY SYSTEM
+  showPenaltyPicker(){
+    document.getElementById('step-type').classList.add('hidden');
+    document.getElementById('step-result').classList.add('hidden');
+    const penalties=[
+      {code:'D-Delay of Game',label:'D-Delay of Game'},
+      {code:'D-Holding',label:'D-Holding'},
+      {code:'D-Illegal Contact',label:'D-Illegal Contact'},
+      {code:'D-Illegal Pass Interference',label:'D-Illegal Pass Int'},
+      {code:'D-Illegal Substitution',label:'D-Illegal Substitution'},
+      {code:'D-Offside',label:'D-Offside'},
+      {code:'D-Pass Interference',label:'D-Pass Interference'},
+      {code:'D-Personal Foul',label:'D-Personal Foul'},
+      {code:'D-Roughing',label:'D-Roughing'},
+      {code:'D-Sideline',label:'D-Sideline'},
+      {code:'D-Stripping',label:'D-Stripping'},
+      {code:'D-Illegal Procedure',label:'D-Illegal Procedure'},
+      {code:'O-Delay of Game',label:'O-Delay of Game'},
+      {code:'O-False Start',label:'O-False Start'},
+      {code:'O-Flag Guarding',label:'O-Flag Guarding'},
+      {code:'O-Holding',label:'O-Holding'},
+      {code:'O-Illegal Backward Pass',label:'O-Illegal Backward Pass'},
+      {code:'O-Illegal Forward Pass',label:'O-Illegal Forward Pass'},
+      {code:'O-Illegal Motion',label:'O-Illegal Motion'},
+      {code:'O-Illegal Procedure',label:'O-Illegal Procedure'},
+      {code:'O-Illegal Shift',label:'O-Illegal Shift'},
+      {code:'O-Illegal Substitution',label:'O-Illegal Substitution'},
+      {code:'O-Ineligible Receiver',label:'O-Ineligible Receiver'},
+      {code:'O-Intentional Grounding',label:'O-Intent. Grounding'},
+      {code:'O-Offside',label:'O-Offside'},
+      {code:'O-Pass Interference',label:'O-Pass Interference'},
+      {code:'O-Personal Foul',label:'O-Personal Foul'},
+      {code:'O-Sideline',label:'O-Sideline'},
+      {code:'O-Unsportsmanlike',label:'O-Unsportsmanlike'},
+      {code:'D-Unsportsmanlike',label:'D-Unsportsmanlike'}
+    ];
+    let btns=penalties.map(p=>{
+      const isD=p.code.startsWith('D');
+      const style=isD?'background:#e8f5e9;color:#2e7d32':'background:#ffebee;color:#c62828';
+      return `<button class="play-btn" style="${style};font-size:0.8rem;padding:12px 6px" onclick="Flow.pickPenalty('${p.code}')">${p.label}</button>`;
+    }).join('');
+    document.getElementById('result-label').textContent='Select Penalty';
+    document.getElementById('result-btns').innerHTML=btns;
+    document.getElementById('step-result').classList.remove('hidden');
+  },
+
+  pickPenalty(code){
+    const c=this.current;
+    c._penalty=code;
+    c.result='penalty';
+    document.getElementById('step-result').classList.add('hidden');
+    // Ask: from LOS or Spot of foul + penalty yards
+    document.getElementById('result-label').textContent='Enforced from?';
+    document.getElementById('result-btns').innerHTML=`
+      <button class="play-btn" onclick="Flow.pickPenaltySpot('los')">📍 Line of Scrimmage</button>
+      <button class="play-btn" onclick="Flow.pickPenaltySpot('spot')">📍 Spot of Foul</button>`;
+    document.getElementById('step-result').classList.remove('hidden');
+  },
+
+  pickPenaltySpot(spot){
+    const c=this.current;
+    c._penaltySpot=spot;
+    document.getElementById('step-result').classList.add('hidden');
+    YardPad.start('Penalty Yards');
   },
 
   showConfirm(){
@@ -1136,13 +1209,21 @@ const Flow={
 
   buildDesc(){
     const c=this.current,p=c.players;let d='';
+    // Penalty description
+    if(c.result==='penalty'||c.type==='penalty'){
+      const pen=c._penalty||'Penalty';
+      const yds=c._penaltyYds||0;
+      const spot=c._penaltySpot==='spot'?'spot of foul':'LOS';
+      d=`🚩 ${pen} ${yds}yds (from ${spot})`;
+      return d;
+    }
     if(gameState.possession==='offense'){
       if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}, returned ${c.yards}yds`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
       else if(c.type==='run'){d=c.result==='gain'?`Run #${p.carrier} +${c.yards}yds`:`Run #${p.carrier} -${Math.abs(c.yards)}yds`}
       else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed`;else if(c.result==='return')d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
       else if(c.type==='fg'){const dist=c.yards+10;if(c.result==='good')d=`FG GOOD #${p.kicker} (${dist}yd)`;else if(c.result==='wide')d=`FG NO GOOD #${p.kicker} (${dist}yd) - Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`FG SHORT #${p.kicker} (${dist}yd) - Touchback`;else if(c._fgShortResult==='return')d=`FG SHORT #${p.kicker} (${dist}yd) - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`FG SHORT #${p.kicker} (${dist}yd) - RETURNED FOR TD!`}}
     }else{
-      if(c.type==='pass'){if(c.result==='complete')d=`Opp complete +${c.yards}yds (flag #${p.flagPuller})`;else if(c.result==='incomplete')d=`Pass defended by #${p.defender}`;else if(c.result==='interception')d=`INT by #${p.interceptor} ret ${c.yards}yds`;else if(c.result==='sack')d=`SACK by #${p.flagPuller} -${Math.abs(c.yards)}yds`}
+      if(c.type==='pass'){if(c.result==='complete')d=`Opp complete +${c.yards}yds (flag #${p.flagPuller})`;else if(c.result==='incomplete')d=`Pass defended by #${p.defender}`;else if(c.result==='dropped')d=`Opp incomplete (no defender)`;else if(c.result==='interception')d=`INT by #${p.interceptor} ret ${c.yards}yds`;else if(c.result==='sack')d=`SACK by #${p.flagPuller} -${Math.abs(c.yards)}yds`}
       else if(c.type==='run'){d=c.result==='gain'?`Opp run +${c.yards}yds (flag #${p.flagPuller})`:`Opp run -${Math.abs(c.yards)}yds (flag #${p.flagPuller})`}
       else if(c.type==='puntreturn'){if(c.result==='return')d=`Punt return #${p.returner} ${c._retYds||c.yards}yds`;else if(c.result==='faircatch')d=`Punt fair catch (${c._puntDist||c.yards}yd punt)`;else d=`Punt touchback`}
       else if(c.type==='fgblock'){if(c.result==='blocked')d=`FG BLOCKED by #${p.blocker}`;else if(c.result==='good')d=`Opp FG Good (+3)`;else if(c.result==='wide')d=`Opp FG Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`Opp FG Short - Touchback`;else if(c._fgShortResult==='return')d=`Opp FG Short - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`Opp FG Short - RETURNED FOR TD!`}}
@@ -1156,6 +1237,32 @@ const Flow={
     const desc=this.buildDesc();let resultStr='';
 
     // APPLY ENGINE
+    // Handle penalties (no down change, just move ball)
+    if(c.result==='penalty'||c.type==='penalty'){
+      const pen=c._penalty||'';
+      const penYds=Math.abs(c._penaltyYds||0);
+      if(pen.startsWith('O')){
+        // Offense penalty — lose yards (ball moves backward)
+        gameState.ballPos=Math.max(1,gameState.ballPos-penYds);
+      }else{
+        // Defense penalty — gain yards (ball moves forward)
+        gameState.ballPos=Math.min(gameState.fieldLength-1,gameState.ballPos+penYds);
+      }
+      // Recalculate first down line if we crossed it
+      if(gameState.ballPos>=gameState.firstDownLine){
+        gameState.down=1;
+        gameState.firstDownLine=Engine.nextFD(gameState.ballPos,gameState.fieldLength);
+      }
+      // Don't advance down on penalties — replay the down
+      // Save and exit
+      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:{},yards:pen.startsWith('O')?-penYds:penYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc,quarter:gameState.quarter||1,penalty:pen};
+      gamePlays.push(play);
+      try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+      try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+      Cache.saveLocal();
+      GameUI.refresh();Flow.restart();return;
+    }
+
     if(gameState.possession==='offense'){
       if(c.type==='pass'){
         if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
@@ -1209,7 +1316,7 @@ const Flow={
     }else{
       if(c.type==='pass'){
         if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
-        else if(c.result==='incomplete'){resultStr=Engine.advanceDown()}
+        else if(c.result==='incomplete'||c.result==='dropped'){resultStr=Engine.advanceDown()}
         else if(c.result==='interception'){let ourStart=gameState.fieldLength-gameState.ballPos+c.yards;if(ourStart>=gameState.fieldLength){currentGame.teamScore+=6;resultStr='td'}else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)));resultStr='possession'}}
         else if(c.result==='sack'){resultStr=Engine.advance(-Math.abs(c.yards))}
       }else if(c.type==='run'){
