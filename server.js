@@ -22,8 +22,14 @@ if (!fs.existsSync(path.join(__dirname, 'public', 'index.html'))) {
 // ============================================================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  // Force IPv4 to fix Render free tier connection issues
+  connectionTimeoutMillis: 10000
 });
+
+// Force DNS to resolve IPv4
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 
 async function initDB() {
   const client = await pool.connect();
