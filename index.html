@@ -426,7 +426,7 @@ const Seasons={
       const seasons=await API.get('/seasons');
       const el=document.getElementById('season-list-el');
       if(!seasons.length){el.innerHTML='<div class="card">No seasons yet.</div>';return}
-      el.innerHTML=seasons.map(s=>`<div class="card"><h3>${s.name}</h3><button class="btn btn-primary btn-sm" onclick="Seasons.open(${s.id},'${s.name.replace(/'/g,"\\'")}')">Open</button> <button class="btn btn-danger btn-sm" onclick="Seasons.del(${s.id})">Delete</button></div>`).join('');
+      el.innerHTML=seasons.map(s=>`<div class="card"><h3>${s.name}</h3><button class="btn btn-primary btn-sm" onclick="Seasons.open(${s.id},'${s.name.replace(/'/g,"\\'")}')">Open</button> <button class="btn btn-warning btn-sm" onclick="Seasons.copy(${s.id},'${s.name.replace(/'/g,"\\'")}')">📋 Copy</button> <button class="btn btn-danger btn-sm" onclick="Seasons.del(${s.id})">Delete</button></div>`).join('');
     }catch(e){alert(e.message)}
   },
   async open(id,name){
@@ -445,6 +445,15 @@ const Seasons={
   async del(id){
     if(!confirm('Delete this season and all its data?'))return;
     try{await API.del('/seasons/'+id);Seasons.loadList()}catch(e){alert(e.message)}
+  },
+  async copy(id,name){
+    const newName=prompt('Name for the new season:',name+' (Copy)');
+    if(!newName)return;
+    try{
+      const res=await API.post('/seasons/'+id+'/copy',{name:newName});
+      alert(`✅ Season copied! ${res.playersCopied} players and rules carried over.`);
+      Seasons.loadList();
+    }catch(e){alert(e.message)}
   }
 };
 

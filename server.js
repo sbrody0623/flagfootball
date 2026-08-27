@@ -209,6 +209,26 @@ app.delete('/api/seasons/:id', authenticate, (req, res) => {
   res.json({ ok: true });
 });
 
+// Copy a season (players + rules, no games)
+app.post('/api/seasons/:id/copy', authenticate, (req, res) => {
+  const { name } = req.body;
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ? AND team_id = ?').get(req.params.id, req.teamId);
+  if (!season) return res.status(404).json({ error: 'Season not found' });
+
+  const newName = name || season.name + ' (Copy)';
+  const result = db.prepare('INSERT INTO seasons (team_id, name, rules) VALUES (?, ?, ?)').run(req.teamId, newName, season.rules);
+  const newSeasonId = result.lastInsertRowid;
+
+  // Copy all active players
+  const players = db.prepare('SELECT number, name, position FROM players WHERE season_id = ? AND active = 1').all(req.params.id);
+  const insertPlayer = db.prepare('INSERT INTO players (season_id, number, name, position) VALUES (?, ?, ?, ?)');
+  for (const p of players) {
+    insertPlayer.run(newSeasonId, p.number, p.name, p.position);
+  }
+
+  res.json({ id: newSeasonId, name: newName, playersCopied: players.length });
+});
+
 // ============================================================
 // PLAYER ROUTES
 // ============================================================
