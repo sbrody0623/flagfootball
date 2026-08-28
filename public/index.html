@@ -1043,9 +1043,28 @@ const Engine={
   switchOff(pos){gameState.possession='offense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
   turnover(){const np=gameState.fieldLength-gameState.ballPos;if(gameState.possession==='offense')this.switchDef(Math.max(1,np));else this.switchOff(Math.max(1,np))},
   handleSafety(scoringTeam){
+    // After a safety, the team that was SCORED ON free-kicks the ball to the SCORING team.
+    // The scoring team RECEIVES and gets possession.
     const r=currentSeason.rules;
-    if(r.safetyMethod==='freekick'){if(scoringTeam==='team')this.switchOff(r.safetyKickYd||20);else this.switchDef(r.safetyKickYd||20)}
-    else{if(scoringTeam==='team')this.switchOff(r.safetyPlaceYd||40);else this.switchDef(r.safetyPlaceYd||40)}
+    const kickYd=r.safetyKickYd||20;      // kicking team kicks from their own kickYd
+    const placeYd=r.safetyPlaceYd||40;    // (if "ball placed" method) scoring team starts here
+    if(r.safetyMethod==='freekick'){
+      // Scored-on team kicks from their kickYd; receiving (scoring) team gets the ball.
+      // Receiving team's starting position ≈ midfield-ish. We place them at (fieldLength - kickYd - typical net).
+      // Simplest correct behavior: scoring team gets possession at fieldLength - kickYd (mirror of the kick spot).
+      const recvStart=Math.max(1,Math.min(gameState.fieldLength-1,gameState.fieldLength-kickYd));
+      if(scoringTeam==='team'){
+        // We scored the safety → we receive → our offense
+        this.switchOff(recvStart);
+      }else{
+        // Opponent scored the safety → they receive → we go to defense, they have the ball
+        this.switchDef(recvStart);
+      }
+    }else{
+      // Ball simply placed at placeYd for the scoring team
+      if(scoringTeam==='team')this.switchOff(placeYd);
+      else this.switchDef(placeYd);
+    }
   }
 };
 
