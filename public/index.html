@@ -842,6 +842,7 @@ const Stats={
     const receiving={}; // {number: {rec,yds,td,long}}
     const defense={};  // {number: {tackles,sacks,int,intYds,pd}}
     const punting={};  // {number: {punts,yds,long}}
+    const puntRet={};  // {number: {ret,yds,long}} punt return stats
     const kicking={};  // {number: {fgAtt,fgMade,fgDetails[],xpAtt,xpMade}}
 
     for(const play of plays){
@@ -928,7 +929,7 @@ const Stats={
           if(result==='interception'&&p.interceptor){
             if(!defense[p.interceptor])defense[p.interceptor]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
             defense[p.interceptor].int++;
-            defense[p.interceptor].intYds+=yds;
+            defense[p.interceptor].intYds+=(p._intRetYds!==undefined?p._intRetYds:yds);
           }
           if(result==='sack'&&p.flagPuller){
             if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
@@ -945,9 +946,11 @@ const Stats={
         }
         // PUNT RETURN (special teams on defense)
         if(type==='puntreturn'&&result==='return'&&p.returner){
-          // Track as special teams
-          if(!receiving[p.returner])receiving[p.returner]={rec:0,yds:0,td:0,long:0};
-          // We could add a punt return category separately
+          const rYds=(p._retYds!==undefined?p._retYds:0);
+          if(!puntRet[p.returner])puntRet[p.returner]={ret:0,yds:0,long:0};
+          puntRet[p.returner].ret++;
+          puntRet[p.returner].yds+=rYds;
+          if(rYds>puntRet[p.returner].long)puntRet[p.returner].long=rYds;
         }
       }
     }
@@ -992,6 +995,14 @@ const Stats={
     if(puntKeys.length){
       html+=`<div class="card"><h3>🦵 Punting</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Punts</td><td>Yds</td><td>Avg</td><td>Long</td></tr>`;
       for(const num of puntKeys){const s=punting[num];const avg=s.punts?Math.round(s.yds/s.punts*10)/10:0;html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.punts}</td><td>${s.yds}</td><td>${avg}</td><td>${s.long}</td></tr>`}
+      html+=`</table></div>`;
+    }
+
+    // PUNT RETURNS
+    const prKeys=Object.keys(puntRet);
+    if(prKeys.length){
+      html+=`<div class="card"><h3>↩️ Punt Returns</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Ret</td><td>Yds</td><td>Avg</td><td>Long</td></tr>`;
+      for(const num of prKeys){const s=puntRet[num];const avg=s.ret?Math.round(s.yds/s.ret*10)/10:0;html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.ret}</td><td>${s.yds}</td><td>${avg}</td><td>${s.long}</td></tr>`}
       html+=`</table></div>`;
     }
 
@@ -1081,6 +1092,7 @@ const Flow={
 
   restart(){
     this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null};
+    if(typeof FieldPick!=='undefined')FieldPick.mode=null;
     document.getElementById('step-type').classList.remove('hidden');
     document.getElementById('step-result').classList.add('hidden');
     document.getElementById('step-player').classList.add('hidden');
@@ -1193,12 +1205,16 @@ const Flow={
     const isGainLoss=((t==='pass'&&(r==='complete'||r==='sack'))||(t==='run'));
     // Punt plays — use field picker to pick landing spot (and return spot)
     const isPunt=(t==='punt'&&(r==='down'||r==='return'))||(t==='puntreturn'&&(r==='return'||r==='faircatch'));
+    // Interceptions — pick where intercepted, then where the return ended
+    const isInt=(t==='pass'&&r==='interception');
     if(isGainLoss){
       FieldPick.startGainLoss(label);
     }else if(isPunt){
       FieldPick.startPunt();
+    }else if(isInt){
+      FieldPick.startInt();
     }else{
-      // kicked-from line, INT return yards, etc. — keep keypad
+      // kicked-from line, etc. — keep keypad
       YardPad.start(label);
     }
   },
@@ -1425,12 +1441,17 @@ const Flow={
         if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
         else if(c.result==='incomplete'){resultStr=Engine.advanceDown()}
         else if(c.result==='interception'){
-          // Opponent intercepted at current spot, returned c.yards
-          const retYds=c.yards||0;
-          const intSpot=gameState.fieldLength-gameState.ballPos; // from opponent's goal
-          const oppStart=intSpot+retYds;
+          let oppStart;
+          if(c._intEndPos!==undefined){
+            // Field picker: opponent's return ended at _intEndPos in OUR frame → mirror to their frame
+            oppStart=gameState.fieldLength-c._intEndPos;
+          }else{
+            // Keypad fallback: INT at LOS + return yards
+            const retYds=c.yards||0;
+            const intSpot=gameState.fieldLength-gameState.ballPos;
+            oppStart=intSpot+retYds;
+          }
           if(oppStart>=gameState.fieldLength){
-            // INT returned for TD by opponent
             resultStr='td';
           }else{
             Engine.switchDef(Math.max(1,Math.min(oppStart,gameState.fieldLength-1)));
@@ -1474,7 +1495,18 @@ const Flow={
       if(c.type==='pass'){
         if(c.result==='complete'){resultStr=Engine.advance(c.yards)}
         else if(c.result==='incomplete'||c.result==='dropped'){resultStr=Engine.advanceDown()}
-        else if(c.result==='interception'){let ourStart=gameState.fieldLength-gameState.ballPos+c.yards;if(ourStart>=gameState.fieldLength){resultStr='td'}else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)));resultStr='possession'}}
+        else if(c.result==='interception'){
+          let ourStart;
+          if(c._intEndPos!==undefined){
+            // Field picker: return ended at _intEndPos in the passing (opponent) frame → mirror to our frame
+            ourStart=gameState.fieldLength-c._intEndPos;
+          }else{
+            // Keypad fallback: INT at LOS + return yards
+            ourStart=gameState.fieldLength-gameState.ballPos+c.yards;
+          }
+          if(ourStart>=gameState.fieldLength){resultStr='td'}
+          else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)));resultStr='possession'}
+        }
         else if(c.result==='sack'){resultStr=Engine.advance(-Math.abs(c.yards))}
       }else if(c.type==='run'){
         const yds=c.result==='gain'?c.yards:-Math.abs(c.yards);resultStr=Engine.advance(yds)
@@ -1528,8 +1560,16 @@ const Flow={
       Engine.turnover()
     }
 
+    // Determine the primary yards value for stats
+    // Punts: yards = punt distance. Everything else: yards = c.yards.
+    let statYards=c.yards||0;
+    if(c.type==='punt'||c.type==='puntreturn'){statYards=c._puntDist||c.yards||0;}
+    // Stash return yards inside players JSON (no DB schema change needed)
+    const playersData=Object.assign({},c.players);
+    if(c._retYds)playersData._retYds=c._retYds;              // punt return yards
+    if(c.result==='interception')playersData._intRetYds=c.yards||0; // INT return yards
     // Save play to server
-    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:c.players,yards:c.yards||0,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1};
+    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1};
     gamePlays.push(play);
     // Save to server, fall back to cache if offline
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
@@ -1715,7 +1755,65 @@ const FieldPick={
     }
   },
 
+  // ---- INTERCEPTION MODE ----
+  intStep:0,
+  intCatchPos:0,
+  startInt(){
+    const c=Flow.current;
+    this.mode='int';
+    this.fl=gameState.fieldLength;
+    this.intStep=1;
+    // Rendered in the current possessing (passing team) frame, driving left->right.
+    this.startPos=gameState.ballPos; // LOS where the pass started
+    this.endPos=Math.min(this.fl,gameState.ballPos+10); // default catch ~10 downfield
+    const who=(gameState.possession==='offense')?'opponent':'we';
+    document.getElementById('fieldpick-label').textContent='Drag to where it was INTERCEPTED';
+    this.renderInt();
+    this.buildYardLines();
+    document.getElementById('step-fieldpick').classList.remove('hidden');
+    this.attach();
+  },
+  renderInt(){
+    const sFrac=this.posToFrac(this.startPos);
+    const eFrac=this.posToFrac(this.endPos);
+    document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
+    document.getElementById('fp-marker-end').style.left=(eFrac*100)+'%';
+    if(this.intStep===1){
+      document.getElementById('fieldpick-readout').innerHTML=`Pass from ${this.fmtSpot(this.startPos)} → intercepted at ${this.fmtSpot(this.endPos)}`;
+    }else{
+      // Step 2: the intercepting team returns back toward the passing team's goal (leftward)
+      const ret=Math.max(0,Math.round(this.intCatchPos-this.endPos));
+      let extra='';
+      if(this.endPos<=0)extra=' 🏈 Pick-6!';
+      document.getElementById('fieldpick-readout').innerHTML=`Returned to ${this.fmtSpot(this.endPos)}<span class="yds">${ret} yd return${extra}</span>`;
+    }
+  },
+
   done(){
+    if(this.mode==='int'){
+      const c=Flow.current;
+      if(this.intStep===1){
+        this.intCatchPos=this.endPos;
+        c._intCatchPos=this.endPos; // absolute pos in passing-team frame
+        // Step 2: where did the return end?
+        this.intStep=2;
+        this.startPos=this.endPos;
+        this.endPos=this.endPos; // start at catch spot
+        document.getElementById('fieldpick-label').textContent='Drag to where the RETURN ended';
+        this.renderInt();
+        this.attach();
+        return;
+      }else{
+        // Return yards = catch spot - end spot (returner runs back toward passer's goal)
+        const retYds=Math.max(0,Math.round(this.intCatchPos-this.endPos));
+        c._intEndPos=this.endPos;
+        c.yards=retYds; // store return yards for stats (interceptor return yds)
+        this.mode=null;
+        document.getElementById('step-fieldpick').classList.add('hidden');
+        Flow.onYardsDone(retYds);
+        return;
+      }
+    }
     if(this.mode==='punt'){
       const c=Flow.current;
       if(this.puntStep===1){
@@ -1755,6 +1853,7 @@ const FieldPick={
 
   render(){
     if(this.mode==='punt'){this.renderPunt();return;}
+    if(this.mode==='int'){this.renderInt();return;}
     const sFrac=this.posToFrac(this.startPos);
     const eFrac=this.posToFrac(this.endPos);
     document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
