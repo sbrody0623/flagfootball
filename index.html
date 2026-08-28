@@ -865,7 +865,7 @@ const Stats={
 
     for(const play of plays){
       const p=play.players||{};
-      const type=play.play_type||play.type||'';
+      const type=play.play_type||play.playType||play.type||'';
       const result=play.result||'';
       const yds=play.yards||0;
       const side=play.possession||'offense';
@@ -1667,7 +1667,19 @@ const Keypad={
   press(d){if(this.value.length>=2)return;this.value+=d;document.getElementById('keypad-display').textContent='#'+this.value},
   clear(){this.value='';document.getElementById('keypad-display').textContent='-'},
   skip(){if(!this.optional){return}document.getElementById('step-player').classList.add('hidden');if(XP._waitingForPlayer){XP._player='';XP._waitingForPlayer=false;document.getElementById('play-flow').classList.add('hidden');document.getElementById('panel-xp').classList.remove('hidden');XP.result(XP._result);return}Flow.askNextPlayer()},
-  done(){if(!this.value&&!this.optional){alert('Enter a number');return}if(this.value)Flow.current.players[this.key]=this.value;document.getElementById('step-player').classList.add('hidden');if(XP._waitingForPlayer){XP._player=this.value;XP._waitingForPlayer=false;document.getElementById('play-flow').classList.add('hidden');document.getElementById('panel-xp').classList.remove('hidden');XP.result(XP._result);return}Flow.askNextPlayer()}
+  done(){
+    if(!this.value&&!this.optional){alert('Enter a number');return}
+    document.getElementById('step-player').classList.add('hidden');
+    // XP kicker entry — route back to XP, don't write into Flow.current.players
+    if(XP._waitingForPlayer){
+      XP._player=this.value||'';XP._waitingForPlayer=false;
+      document.getElementById('play-flow').classList.add('hidden');
+      document.getElementById('panel-xp').classList.remove('hidden');
+      XP.result(XP._result);return;
+    }
+    if(this.value)Flow.current.players[this.key]=this.value;
+    Flow.askNextPlayer();
+  }
 };
 
 // ============================================================
@@ -1978,6 +1990,8 @@ const XP={
   team:'team',pts:0,meth:'',
   show(team){
     this.team=team;this.pts=0;this.meth='';
+    // Reset per-attempt state so a previous XP's kicker # doesn't carry over
+    this._player=null;this._result=null;this._waitingForPlayer=false;
     document.getElementById('play-flow').classList.add('hidden');
     document.getElementById('game-ctrls').classList.add('hidden');
     document.getElementById('panel-xp').classList.remove('hidden');
