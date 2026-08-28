@@ -855,15 +855,20 @@ const Stats={
       if(side==='offense'){
         // PASSING
         if(type==='pass'&&p.qb){
-          if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0};
-          passing[p.qb].att++;
-          if(result==='complete'){
-            passing[p.qb].comp++;
-            passing[p.qb].yds+=yds;
-            // Check if it was a TD (description contains TOUCHDOWN)
-            if((play.description||'').includes('TOUCHDOWN'))passing[p.qb].td++;
+          if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0,sackYds:0};
+          // A sack is NOT a pass attempt — track it separately, don't touch att/comp/yds
+          if(result==='sack'){
+            passing[p.qb].sacks=(passing[p.qb].sacks||0)+1;
+            passing[p.qb].sackYds=(passing[p.qb].sackYds||0)+Math.abs(yds);
+          }else{
+            passing[p.qb].att++;
+            if(result==='complete'){
+              passing[p.qb].comp++;
+              passing[p.qb].yds+=yds; // completed pass yards only
+              if((play.description||'').includes('TOUCHDOWN'))passing[p.qb].td++;
+            }
+            if(result==='interception')passing[p.qb].int++;
           }
-          if(result==='interception')passing[p.qb].int++;
         }
         // RUSHING
         if(type==='run'&&p.carrier){
@@ -961,8 +966,8 @@ const Stats={
     // PASSING
     const passKeys=Object.keys(passing);
     if(passKeys.length){
-      html+=`<div class="card"><h3>🎯 Passing</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Comp</td><td>Att</td><td>Yds</td><td>TD</td><td>INT</td></tr>`;
-      for(const num of passKeys){const s=passing[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.comp}</td><td>${s.att}</td><td>${s.yds}</td><td>${s.td}</td><td>${s.int}</td></tr>`}
+      html+=`<div class="card"><h3>🎯 Passing</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Comp</td><td>Att</td><td>Yds</td><td>TD</td><td>INT</td><td>Sk</td></tr>`;
+      for(const num of passKeys){const s=passing[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.comp}</td><td>${s.att}</td><td>${s.yds}</td><td>${s.td}</td><td>${s.int}</td><td>${s.sacks||0}</td></tr>`}
       html+=`</table></div>`;
     }
 
