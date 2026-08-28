@@ -855,11 +855,14 @@ const Stats={
       if(side==='offense'){
         // PASSING
         if(type==='pass'&&p.qb){
-          if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0,sackYds:0};
-          // A sack is NOT a pass attempt — track it separately, don't touch att/comp/yds
+          if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0};
           if(result==='sack'){
+            // NFHS/NCAA rule: sack yardage is charged to the QB's RUSHING (negative rush yards).
+            // Not a pass attempt. Count the sack for reference.
             passing[p.qb].sacks=(passing[p.qb].sacks||0)+1;
-            passing[p.qb].sackYds=(passing[p.qb].sackYds||0)+Math.abs(yds);
+            if(!rushing[p.qb])rushing[p.qb]={att:0,yds:0,td:0,long:0};
+            rushing[p.qb].att++;                 // sack counts as a rushing attempt (loss)
+            rushing[p.qb].yds+=-Math.abs(yds);   // negative rushing yards
           }else{
             passing[p.qb].att++;
             if(result==='complete'){
