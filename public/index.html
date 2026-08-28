@@ -344,7 +344,7 @@ h3{font-size:1rem;margin-bottom:6px}
       <button class="btn btn-sm" style="background:#e3f2fd;color:#1565c0" onclick="GameActions.toggleLog()">📝 Log</button>
     </div>
     <div class="action-row hidden" id="onside-row" style="margin-top:6px">
-      <button class="btn btn-sm" style="background:#fff3e0;color:#e65100" onclick="GameActions.onside()">🎯 Onside Kick (4th &amp; 20 from own 20)</button>
+      <button class="btn btn-sm" id="onside-btn" style="background:#fff3e0;color:#e65100" onclick="GameActions.onside()">🎯 Onside Kick</button>
     </div>
   </div>
   <div class="card hidden" id="log-card"><h3>Play-by-Play</h3><div class="play-log" id="play-log-el"></div></div>
@@ -1135,10 +1135,19 @@ const GameUI={
     document.getElementById('g-yd').textContent=this.fmtYd();
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
     document.getElementById('g-sync').textContent=Cache.getStatus();
-    // Onside option: show only in 2nd half (Q3/Q4, not OT) when OUR team is trailing
-    const weTrail=currentGame.teamScore<currentGame.oppScore;
-    const showOnside=(qtr===3||qtr===4)&&weTrail&&!gameState.overtime;
+    // Onside option: show in 2nd half (Q3/Q4, not OT) when EITHER team is trailing
+    const isSecondHalf=(qtr===3||qtr===4)&&!gameState.overtime;
+    const tied=currentGame.teamScore===currentGame.oppScore;
+    const showOnside=isSecondHalf&&!tied;
     document.getElementById('onside-row').classList.toggle('hidden',!showOnside);
+    // Label the button for whichever team is trailing
+    if(showOnside){
+      const weTrail=currentGame.teamScore<currentGame.oppScore;
+      const teamName=localStorage.getItem('ff_team_name')||'Us';
+      const trailingName=weTrail?teamName:currentGame.opponent;
+      const btn=document.getElementById('onside-btn');
+      if(btn)btn.textContent=`🎯 Onside Kick — ${trailingName} (trailing) 4th & 20 from own 20`;
+    }
     const lel=document.getElementById('play-log-el');
     if(!gamePlays.length)lel.innerHTML='<div class="play-log-item">No plays yet</div>';
     else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>`<div class="play-log-item"><strong>#${gamePlays.length-i}</strong> ${p.description||p.desc||''}</div>`).join('');
@@ -2080,14 +2089,20 @@ const GameActions={
     GameUI.refresh();Flow.restart()
   },
   onside(){
-    if(!confirm('Onside kick? You get the ball 4th & 20 at your own 20 — one play to gain 20+ yards.'))return;
-    // Our offense, own 20, 4th down, need 20 yards (first-down line at 40)
-    gameState.possession='offense';
+    const weTrail=currentGame.teamScore<currentGame.oppScore;
+    const teamName=localStorage.getItem('ff_team_name')||'Us';
+    const trailingName=weTrail?teamName:currentGame.opponent;
+    if(!confirm(`Onside kick for ${trailingName} (trailing)? They get the ball 4th & 20 at their own 20 — one play to gain 20+ yards.`))return;
+    // The trailing team gets the ball at their own 20, 4th down, need 20 (FD line at 40)
+    if(weTrail){
+      gameState.possession='offense';  // our ball
+    }else{
+      gameState.possession='defense';  // opponent's ball (they're on offense from our defense view)
+    }
     gameState.ballPos=20;
     gameState.down=4;
     gameState.firstDownLine=40;
-    // Log a marker
-    const play={playNumber:gamePlays.length+1,possession:'offense',playType:'onside',result:'onside',players:{},yards:0,downBefore:4,ballPosBefore:20,description:`🎯 ONSIDE KICK — 4th & 20 from own 20`,quarter:gameState.quarter||1};
+    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'onside',result:'onside',players:{},yards:0,downBefore:4,ballPosBefore:20,description:`🎯 ONSIDE KICK — ${trailingName} 4th & 20 from own 20`,quarter:gameState.quarter||1};
     gamePlays.push(play);
     API.post(`/games/${currentGame.id}/plays`,play).catch(()=>Cache.queuePlay(play));
     API.put(`/games/${currentGame.id}`,{gameState}).catch(()=>{});
