@@ -1495,7 +1495,6 @@ const Flow={
         else if(c.result==='td'){resultStr='td'}
         if(resultStr!=='td')resultStr='possession'
       }else if(c.type==='fg'){
-        g.plays.push(play);
         if(c.result==='good'){currentGame.teamScore+=3;Engine.switchDef(r.afterScoreYd||14)}
         else if(c.result==='wide'){
           // Wide or hit endzone = touchback
@@ -1542,7 +1541,6 @@ const Flow={
         else if(c.result==='return'){const dist=c._puntDist||30;const retYds=c._retYds||0;let land=(gameState.fieldLength-prevState.ballPos)-dist;if(land<0)land=0;let ourStart=land+retYds;if(ourStart>=gameState.fieldLength){resultStr='td'}else{Engine.switchOff(Math.max(1,Math.min(ourStart,gameState.fieldLength-1)))}}
         resultStr=resultStr||'possession'
       }else if(c.type==='fgblock'){
-        g.plays.push(play);
         if(c.result==='blocked'){Engine.switchOff(Math.max(1,gameState.fieldLength-prevState.ballPos))}
         else if(c.result==='good'){currentGame.oppScore+=3;Engine.switchOff(r.afterScoreYd||14)}
         else if(c.result==='wide'){Engine.switchOff(r.touchbackYd||14)}
