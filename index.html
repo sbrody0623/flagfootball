@@ -2039,6 +2039,9 @@ const GameActions={
   },
   async endQuarter(){
     const qtr=gameState.quarter||1;
+    // Confirm to prevent accidental double-taps ending two quarters
+    const qLabel=qtr>=5?`overtime period ${qtr-4}`:`Q${qtr}`;
+    if(!confirm(`End ${qLabel}?`))return;
     if(qtr>=4){
       // End of Q4 (or overtime) — check if tied
       if(currentGame.teamScore===currentGame.oppScore){
