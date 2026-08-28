@@ -909,13 +909,12 @@ const Stats={
             kicking[p.kicker].fgDetails.push(`${dist}yd ✗`);
           }
         }
-        // EXTRA POINTS (XP plays from offense)
+        // EXTRA POINTS (our XP plays)
         if(type==='xp'){
-          // Try to figure out kicker from description
           const desc=play.description||'';
           if(desc.includes('Our XP')){
-            // Find a kicker in the roster or use generic
-            const xpKey='team';
+            // Use the recorded kicker/player #; fall back to 'Team' only if none saved
+            const xpKey=(p.kicker&&p.kicker!=='')?p.kicker:'Team';
             if(!kicking[xpKey])kicking[xpKey]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};
             kicking[xpKey].xpAtt++;
             if(result==='good')kicking[xpKey].xpMade++;
@@ -1023,7 +1022,7 @@ const Stats={
         const fgStr=s.fgAtt?`${s.fgMade}/${s.fgAtt}`:'—';
         const fgDetail=s.fgDetails.length?s.fgDetails.join(', '):'—';
         const xpStr=s.xpAtt?`${s.xpMade}/${s.xpAtt}`:'—';
-        const label=num==='team'?'Team':`#${num}`;
+        const label=(num==='Team'||num==='team')?'Team':`#${num}`;
         html+=`<tr style="border-bottom:1px solid #eee"><td><strong>${label}</strong></td><td>${fgStr}</td><td style="font-size:0.75rem">${fgDetail}</td><td>${xpStr}</td></tr>`
       }
       html+=`</table></div>`;
