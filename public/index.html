@@ -237,8 +237,8 @@ h3{font-size:1rem;margin-bottom:6px}
       </div></div>
     <div class="form-group"><label>Field Length</label>
       <div class="radio-group">
-        <label><input type="radio" name="rg-fl" value="80" checked><span>80 yds</span></label>
-        <label><input type="radio" name="rg-fl" value="100"><span>100 yds</span></label>
+        <label><input type="radio" name="rg-fl" value="80"><span>80 yds</span></label>
+        <label><input type="radio" name="rg-fl" value="100" checked><span>100 yds</span></label>
       </div></div>
     <div class="form-group"><label>We start on:</label>
       <div class="radio-group">
@@ -735,7 +735,7 @@ const Games={
     const fl=parseInt(document.querySelector('[name="rg-fl"]:checked').value);
     const st=document.querySelector('[name="rg-st"]:checked').value;
     const r=currentSeason.rules;
-    const state={possession:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2,quarter:1};
+    const state={possession:st,startSide:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2,quarter:1};
     try{
       const res=await API.post(`/seasons/${currentSeason.id}/games`,{opponent:opp,homeAway:ha,fieldLength:fl,gameState:state});
       currentGame={id:res.id,opponent:opp,homeAway:ha,fieldLength:fl,teamScore:0,oppScore:0,completed:false};
@@ -2061,12 +2061,16 @@ const GameActions={
       if(currentGame.teamScore===currentGame.oppScore){
         if(confirm('Game is TIED! Record overtime?')){
           // Go to overtime
-          gameState.quarter=qtr+1;
           const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} — OVERTIME ──`,quarter:qtr};
           gamePlays.push(play);
           try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+          gameState.quarter=qtr+1;
+          // Overtime: default to us on offense at the after-score yard line; use Switch to change.
+          const r=currentSeason.rules;
+          Engine.switchOff(r.afterScoreYd||14);
           try{await API.put(`/games/${currentGame.id}`,{gameState})}catch(e){}
           Cache.saveLocal();
+          alert('Overtime! Use the 🔄 Switch button if the other team should start with the ball.');
           GameUI.refresh();Flow.restart();
           return;
         }
@@ -2078,11 +2082,28 @@ const GameActions={
       this.endGame();
       return;
     }
-    gameState.quarter=qtr+1;
-    // Record a marker play
+    // Record end-of-quarter marker
     const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} ──`,quarter:qtr};
     gamePlays.push(play);
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+
+    gameState.quarter=qtr+1;
+
+    // Start of 2nd half (Q3): possession flips to the team that did NOT start Q1.
+    if(qtr===2){
+      const r=currentSeason.rules;
+      const startYd=r.afterScoreYd||14;
+      const startSide=gameState.startSide||'offense';
+      // Opposite of who started Q1
+      const secondHalfSide=(startSide==='offense')?'defense':'offense';
+      if(secondHalfSide==='offense')Engine.switchOff(startYd);else Engine.switchDef(startYd);
+      try{await API.put(`/games/${currentGame.id}`,{gameState})}catch(e){}
+      Cache.saveLocal();
+      GameUI.refresh();Flow.restart();
+      alert('2nd half! Possession set to the team that did NOT start Q1. Use 🔄 Switch if needed.');
+      return;
+    }
+
     try{await API.put(`/games/${currentGame.id}`,{gameState})}catch(e){}
     Cache.saveLocal();
     GameUI.refresh();Flow.restart();
