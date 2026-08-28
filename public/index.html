@@ -1189,13 +1189,16 @@ const Flow={
       }
     }
     if(!need){this.showConfirm();return}
-    // Decide whether this is a "gain/loss" entry that can use the field picker
-    // Gain/loss entries: pass complete, sack, run — the ball moves from current LOS to an ending spot.
+    // Gain/loss entries: pass complete, sack, run — ball moves from LOS to an ending spot.
     const isGainLoss=((t==='pass'&&(r==='complete'||r==='sack'))||(t==='run'));
+    // Punt plays — use field picker to pick landing spot (and return spot)
+    const isPunt=(t==='punt'&&(r==='down'||r==='return'))||(t==='puntreturn'&&(r==='return'||r==='faircatch'));
     if(isGainLoss){
       FieldPick.startGainLoss(label);
+    }else if(isPunt){
+      FieldPick.startPunt();
     }else{
-      // punt distance, kicked-from line, INT return yards, etc. — keep keypad
+      // kicked-from line, INT return yards, etc. — keep keypad
       YardPad.start(label);
     }
   },
@@ -1584,6 +1587,7 @@ const FieldPick={
   ezFrac:0.08,  // end-zone width fraction on each side of the track (matches CSS 8%)
 
   startGainLoss(label){
+    this.mode='gainloss';
     this.label=label||'Where did the ball end?';
     this.fl=gameState.fieldLength;
     this.startPos=gameState.ballPos;
@@ -1634,24 +1638,6 @@ const FieldPick={
     }
   },
 
-  render(){
-    const track=document.getElementById('field-track');
-    const sFrac=this.posToFrac(this.startPos);
-    const eFrac=this.posToFrac(this.endPos);
-    document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
-    document.getElementById('fp-marker-end').style.left=(eFrac*100)+'%';
-    // Readout
-    const yds=Math.round(this.endPos-this.startPos);
-    const startLbl=this.fmtSpot(this.startPos);
-    const endLbl=this.fmtSpot(this.endPos);
-    const sign=yds>=0?'+':'';
-    const cls=yds<0?'yds neg':'yds';
-    let extra='';
-    if(this.endPos>=this.fl)extra=' 🏈 TD!';
-    else if(this.endPos<=0)extra=' ⚠️ Safety';
-    document.getElementById('fieldpick-readout').innerHTML=`${startLbl} → ${endLbl}<span class="${cls}">${sign}${yds} yds${extra}</span>`;
-  },
-
   fmtSpot(pos){
     const mid=this.fl/2;
     if(pos<=0)return'Own EZ';
@@ -1679,15 +1665,109 @@ const FieldPick={
     track.ontouchstart=down;
   },
 
+  useKeypad(){
+    document.getElementById('step-fieldpick').classList.add('hidden');
+    if(this.mode==='punt'){
+      // Fall back to keypad flow for punts (distance then return)
+      this.mode=null;
+      YardPad.start('Punt Distance');
+      return;
+    }
+    YardPad.start(this.label||'Yards');
+  },
+
+  // ---- PUNT MODE ----
+  // Step 1: pick where the punt LANDED. Step 2 (if returned): pick where the returner ended.
+  // Produces c._puntDist and c._retYds matching the keypad flow, then calls showConfirm.
+  puntStep:0,
+  puntLandPos:0,
+
+  startPunt(){
+    const c=Flow.current;
+    this.mode='punt';
+    this.fl=gameState.fieldLength;
+    this.puntStep=1;
+    // In both cases the "kicking" team's LOS is gameState.ballPos in the current possessing frame.
+    // We render the field in the possessing frame (drives left->right); punt travels right toward opp goal.
+    this.startPos=gameState.ballPos;
+    this.endPos=Math.min(this.fl,gameState.ballPos+35); // default guess ~35yd punt
+    document.getElementById('fieldpick-label').textContent='Drag to where the PUNT LANDED';
+    this.renderPunt();
+    this.buildYardLines();
+    document.getElementById('step-fieldpick').classList.remove('hidden');
+    this.attach();
+  },
+
+  renderPunt(){
+    const sFrac=this.posToFrac(this.startPos);
+    const eFrac=this.posToFrac(this.endPos);
+    document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
+    document.getElementById('fp-marker-end').style.left=(eFrac*100)+'%';
+    if(this.puntStep===1){
+      const dist=Math.max(0,Math.round(this.endPos-this.startPos));
+      document.getElementById('fieldpick-readout').innerHTML=`Punt from ${this.fmtSpot(this.startPos)} → landed ${this.fmtSpot(this.endPos)}<span class="yds">${dist} yd punt</span>`;
+    }else{
+      // Step 2: returner runs BACK toward the kicking team's goal (leftward in this frame)
+      const ret=Math.max(0,Math.round(this.puntLandPos-this.endPos));
+      let extra='';
+      if(this.endPos<=this.startPos)extra=' (past LOS!)';
+      document.getElementById('fieldpick-readout').innerHTML=`Returned to ${this.fmtSpot(this.endPos)}<span class="yds">${ret} yd return${extra}</span>`;
+    }
+  },
+
   done(){
+    if(this.mode==='punt'){
+      const c=Flow.current;
+      if(this.puntStep===1){
+        // Punt distance = landing - LOS
+        c._puntDist=Math.max(0,Math.round(this.endPos-this.startPos));
+        this.puntLandPos=this.endPos;
+        if(c.result==='return'){
+          // Ask for return spot
+          this.puntStep=2;
+          this.startPos=this.endPos; // start marker at landing spot
+          document.getElementById('fieldpick-label').textContent='Drag to where the RETURNER ended';
+          this.renderPunt();
+          this.attach();
+          return;
+        }else{
+          // down / faircatch — no return
+          this.mode=null;
+          document.getElementById('step-fieldpick').classList.add('hidden');
+          Flow.onYardsDone(c._puntDist); // enters onYardsDone as the punt distance
+          return;
+        }
+      }else{
+        // Step 2: return yards = landing - returnerEnd (they run back toward kicker's goal)
+        c._retYds=Math.max(0,Math.round(this.puntLandPos-this.endPos));
+        this.mode=null;
+        document.getElementById('step-fieldpick').classList.add('hidden');
+        // Feed the return yards via onYardsDone (it expects _puntDist already set, then _retYds)
+        Flow.onYardsDone(c._retYds);
+        return;
+      }
+    }
+    // Default gain/loss done
     const yds=Math.round(this.endPos-this.startPos);
     document.getElementById('step-fieldpick').classList.add('hidden');
     Flow.onYardsDone(yds);
   },
 
-  useKeypad(){
-    document.getElementById('step-fieldpick').classList.add('hidden');
-    YardPad.start(this.label||'Yards');
+  render(){
+    if(this.mode==='punt'){this.renderPunt();return;}
+    const sFrac=this.posToFrac(this.startPos);
+    const eFrac=this.posToFrac(this.endPos);
+    document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
+    document.getElementById('fp-marker-end').style.left=(eFrac*100)+'%';
+    const yds=Math.round(this.endPos-this.startPos);
+    const startLbl=this.fmtSpot(this.startPos);
+    const endLbl=this.fmtSpot(this.endPos);
+    const sign=yds>=0?'+':'';
+    const cls=yds<0?'yds neg':'yds';
+    let extra='';
+    if(this.endPos>=this.fl)extra=' 🏈 TD!';
+    else if(this.endPos<=0)extra=' ⚠️ Safety';
+    document.getElementById('fieldpick-readout').innerHTML=`${startLbl} → ${endLbl}<span class="${cls}">${sign}${yds} yds${extra}</span>`;
   }
 };
 
