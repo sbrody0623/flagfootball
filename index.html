@@ -915,6 +915,11 @@ const Stats={
           punting[p.punter].yds+=puntDist;
           if(puntDist>punting[p.punter].long)punting[p.punter].long=puntDist;
         }
+        // Flag pull on a punt return counts as a tackle for our defender
+        if(type==='punt'&&result==='return'&&p.flagPuller){
+          if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
+          defense[p.flagPuller].tackles++;
+        }
         // FIELD GOALS
         if(type==='fg'&&p.kicker){
           if(!kicking[p.kicker])kicking[p.kicker]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};
@@ -1220,7 +1225,7 @@ const Flow={
     if(gameState.possession==='offense'){
       if(t==='pass'){this.playerQueue.push({l:'QB #',k:'qb'});if(r==='complete')this.playerQueue.push({l:'Receiver #',k:'receiver'})}
       else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
-      else if(t==='punt')this.playerQueue.push({l:'Punter #',k:'punter'});
+      else if(t==='punt'){this.playerQueue.push({l:'Punter #',k:'punter'});if(r==='return')this.playerQueue.push({l:'Flag Pulled By # (tackled returner)',k:'flagPuller'});}
       else if(t==='fg')this.playerQueue.push({l:'Kicker #',k:'kicker'});
     }else{
       if(t==='pass'){if(r==='complete'||r==='sack')this.playerQueue.push({l:'Flag Pulled By #',k:'flagPuller',opt:true});if(r==='incomplete')this.playerQueue.push({l:'Defended By #',k:'defender',opt:true});if(r==='interception')this.playerQueue.push({l:'Intercepted By #',k:'interceptor'})}
@@ -1429,7 +1434,7 @@ const Flow={
     if(gameState.possession==='offense'){
       if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}, returned ${c.yards}yds`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
       else if(c.type==='run'){d=c.result==='gain'?`Run #${p.carrier} +${c.yards}yds`:`Run #${p.carrier} -${Math.abs(c.yards)}yds`}
-      else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed`;else if(c.result==='return')d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
+      else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed`;else if(c.result==='return'){d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;if(p.flagPuller)d+=` (flag #${p.flagPuller})`;}else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
       else if(c.type==='fg'){const dist=c.yards+10;if(c.result==='good')d=`FG GOOD #${p.kicker} (${dist}yd)`;else if(c.result==='wide')d=`FG NO GOOD #${p.kicker} (${dist}yd) - Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`FG SHORT #${p.kicker} (${dist}yd) - Touchback`;else if(c._fgShortResult==='return')d=`FG SHORT #${p.kicker} (${dist}yd) - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`FG SHORT #${p.kicker} (${dist}yd) - RETURNED FOR TD!`}}
     }else{
       if(c.type==='pass'){if(c.result==='complete')d=`Opp complete +${c.yards}yds (flag #${p.flagPuller})`;else if(c.result==='incomplete')d=`Pass defended by #${p.defender}`;else if(c.result==='dropped')d=`Opp incomplete (no defender)`;else if(c.result==='interception')d=`INT by #${p.interceptor} ret ${c.yards}yds`;else if(c.result==='sack')d=`SACK by #${p.flagPuller} -${Math.abs(c.yards)}yds`}
