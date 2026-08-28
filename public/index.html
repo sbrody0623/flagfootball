@@ -1412,8 +1412,14 @@ const Flow={
   showConfirm(){
     document.getElementById('step-player').classList.add('hidden');
     document.getElementById('step-yards').classList.add('hidden');
+    document.getElementById('step-fieldpick').classList.add('hidden');
     document.getElementById('confirm-summary').textContent=this.buildDesc();
     document.getElementById('step-confirm').classList.remove('hidden')
+  },
+
+  // Called after the punt field-picker has set _puntDist and _retYds
+  afterPuntPicked(){
+    this.showConfirm();
   },
 
   buildDesc(){
@@ -1448,6 +1454,8 @@ const Flow={
   async confirm(){
     const c=this.current,r=currentSeason.rules;
     const prevState=JSON.parse(JSON.stringify(gameState));
+    const prevTeamScore=currentGame.teamScore;
+    const prevOppScore=currentGame.oppScore;
     const desc=this.buildDesc();let resultStr='';
 
     // APPLY ENGINE
@@ -1494,7 +1502,9 @@ const Flow={
       const netDesc=netYds>=0?`+${netYds}yds`:`${netYds}yds`;
 
       // Save and exit
-      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:c.players||{},yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc})`,quarter:gameState.quarter||1,penalty:pen};
+      const penPlayers=Object.assign({},c.players||{});
+      penPlayers._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
+      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc})`,quarter:gameState.quarter||1,penalty:pen};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
       try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
@@ -1628,10 +1638,12 @@ const Flow={
     // Punts: yards = punt distance. Everything else: yards = c.yards.
     let statYards=c.yards||0;
     if(c.type==='punt'||c.type==='puntreturn'){statYards=c._puntDist||c.yards||0;}
-    // Stash return yards inside players JSON (no DB schema change needed)
+    // Stash return yards + pre-play state snapshot inside players JSON (no DB schema change needed)
     const playersData=Object.assign({},c.players);
     if(c._retYds)playersData._retYds=c._retYds;              // punt return yards
     if(c.result==='interception')playersData._intRetYds=c.yards||0; // INT return yards
+    // Full snapshot of state BEFORE this play, for undo
+    playersData._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
     // Save play to server
     const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1};
     gamePlays.push(play);
@@ -1885,27 +1897,28 @@ const FieldPick={
         c._puntDist=Math.max(0,Math.round(this.endPos-this.startPos));
         this.puntLandPos=this.endPos;
         if(c.result==='return'){
-          // Ask for return spot
+          // Ask for return spot (step 2)
           this.puntStep=2;
           this.startPos=this.endPos; // start marker at landing spot
+          this.endPos=this.endPos;
           document.getElementById('fieldpick-label').textContent='Drag to where the RETURNER ended';
           this.renderPunt();
           this.attach();
           return;
         }else{
-          // down / faircatch — no return
+          // down / faircatch — no return. FieldPick already set _puntDist; go straight to players/confirm.
           this.mode=null;
           document.getElementById('step-fieldpick').classList.add('hidden');
-          Flow.onYardsDone(c._puntDist); // enters onYardsDone as the punt distance
+          c._retYds=0;
+          Flow.afterPuntPicked();
           return;
         }
       }else{
-        // Step 2: return yards = landing - returnerEnd (they run back toward kicker's goal)
+        // Step 2: return yards = landing - returnerEnd (returner runs back toward kicker's goal)
         c._retYds=Math.max(0,Math.round(this.puntLandPos-this.endPos));
         this.mode=null;
         document.getElementById('step-fieldpick').classList.add('hidden');
-        // Feed the return yards via onYardsDone (it expects _puntDist already set, then _retYds)
-        Flow.onYardsDone(c._retYds);
+        Flow.afterPuntPicked();
         return;
       }
     }
@@ -2034,15 +2047,33 @@ const GameActions={
     GameUI.refresh();Flow.restart();
   },
   async undo(){
-    if(!gamePlays.length){alert('Nothing to undo');return}if(!confirm('Undo?'))return;
-    gamePlays.pop();
-    try{await API.del(`/games/${currentGame.id}/plays/last`)}catch(e){}
-    // Re-derive state from server
+    if(!gamePlays.length){alert('Nothing to undo');return}if(!confirm('Undo last play?'))return;
+    const removed=gamePlays.pop();
+    // Restore the state snapshot saved before that play
+    let restored=false;
     try{
-      const games=await API.get(`/seasons/${currentSeason.id}/games`);
-      const g=games.find(x=>x.id===currentGame.id);
-      if(g){currentGame.teamScore=g.team_score;currentGame.oppScore=g.opp_score;gameState=g.game_state}
+      const snap=removed&&removed.players&&removed.players._stateBefore?JSON.parse(removed.players._stateBefore):null;
+      if(snap&&snap.gameState){
+        gameState=snap.gameState;
+        currentGame.teamScore=snap.teamScore;
+        currentGame.oppScore=snap.oppScore;
+        restored=true;
+      }
     }catch(e){}
+    // Delete the play from the server
+    try{await API.del(`/games/${currentGame.id}/plays/last`)}catch(e){}
+    // Persist the rolled-back state to the server
+    if(restored){
+      try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
+    }else{
+      // Fallback: fetch whatever the server has
+      try{
+        const games=await API.get(`/seasons/${currentSeason.id}/games`);
+        const g=games.find(x=>x.id===currentGame.id);
+        if(g){currentGame.teamScore=g.team_score;currentGame.oppScore=g.opp_score;gameState=g.game_state}
+      }catch(e){}
+    }
+    Cache.saveLocal();
     GameUI.refresh();Flow.restart()
   },
   async endGame(){
