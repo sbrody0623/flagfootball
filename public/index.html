@@ -1050,25 +1050,25 @@ const Engine={
   switchOff(pos){gameState.possession='offense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
   turnover(){const np=gameState.fieldLength-gameState.ballPos;if(gameState.possession==='offense')this.switchDef(Math.max(1,np));else this.switchOff(Math.max(1,np))},
   handleSafety(scoringTeam){
-    // After a safety, the team that was SCORED ON free-kicks the ball to the SCORING team.
-    // The scoring team RECEIVES and gets possession.
+    // After a safety, the team that was SCORED ON must free-kick (punt) the ball
+    // from their own kick yard line to the scoring team.
     const r=currentSeason.rules;
-    const kickYd=r.safetyKickYd||20;      // kicking team kicks from their own kickYd
+    const kickYd=r.safetyKickYd||20;      // scored-on team kicks from their own kickYd (e.g. 20)
     const placeYd=r.safetyPlaceYd||40;    // (if "ball placed" method) scoring team starts here
     if(r.safetyMethod==='freekick'){
-      // Scored-on team kicks from their kickYd; receiving (scoring) team gets the ball.
-      // Receiving team's starting position ≈ midfield-ish. We place them at (fieldLength - kickYd - typical net).
-      // Simplest correct behavior: scoring team gets possession at fieldLength - kickYd (mirror of the kick spot).
-      const recvStart=Math.max(1,Math.min(gameState.fieldLength-1,gameState.fieldLength-kickYd));
+      // The SCORED-ON team gets the ball at their own kickYd to execute a FREE PUNT.
+      // scoringTeam='team' means WE scored → OPPONENT was scored on → opponent punts → we're on defense.
+      // scoringTeam='opponent' means opponent scored → WE were scored on → we punt → we're on offense.
       if(scoringTeam==='team'){
-        // We scored the safety → we receive → our offense
-        this.switchOff(recvStart);
+        // Opponent free-kicks to us: opponent has ball on their kickYd, about to punt.
+        this.switchDef(kickYd);
       }else{
-        // Opponent scored the safety → they receive → we go to defense, they have the ball
-        this.switchDef(recvStart);
+        // We free-kick to opponent: we have ball on our kickYd, about to punt.
+        this.switchOff(kickYd);
       }
+      gameState.freePunt=true; // flag so the game screen prompts a free punt
     }else{
-      // Ball simply placed at placeYd for the scoring team
+      // Ball simply placed at placeYd for the scoring team (no punt)
       if(scoringTeam==='team')this.switchOff(placeYd);
       else this.switchDef(placeYd);
     }
@@ -1105,8 +1105,10 @@ const GameUI={
     else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>`<div class="play-log-item"><strong>#${gamePlays.length-i}</strong> ${p.description||p.desc||''}</div>`).join('');
   },
   fmtYd(){
-    if(gameState.ballPos<=gameState.mid)return`-${gameState.ballPos} (Own ${gameState.ballPos})`;
-    const rem=gameState.fieldLength-gameState.ballPos;return`+${gameState.ballPos-gameState.mid} (Opp ${rem})`;
+    const mid=gameState.mid;
+    if(gameState.ballPos===mid)return`Midfield (50)`;
+    if(gameState.ballPos<mid)return`Own ${gameState.ballPos}`;
+    return`Opp ${gameState.fieldLength-gameState.ballPos}`;
   }
 };
 
@@ -1130,6 +1132,12 @@ const Flow={
 
   renderTypeButtons(){
     const el=document.getElementById('type-btns');
+    // Free punt after a safety — prompt the kick directly
+    if(gameState.freePunt){
+      const label=gameState.possession==='offense'?'punt':'puntreturn';
+      el.innerHTML=`<button class="play-btn" style="grid-column:1/3;background:#fff3e0;color:#e65100" onclick="Flow.startFreePunt()">🦵 FREE PUNT (after safety) — from the ${gameState.ballPos}</button><button class="play-btn" style="grid-column:1/3" onclick="Flow.skipFreePunt()">Skip free kick (just play from here)</button>`;
+      return;
+    }
     if(gameState.possession==='offense'){
       el.innerHTML=`<button class="play-btn" onclick="Flow.pickType('pass')">🎯 Pass</button><button class="play-btn" onclick="Flow.pickType('run')">🏃 Run</button><button class="play-btn" onclick="Flow.pickType('punt')">🦵 Punt</button><button class="play-btn" onclick="Flow.pickType('fg')">🏈 Field Goal</button><button class="play-btn" onclick="Flow.pickType('penalty')" style="background:#fff3e0;color:#e65100">🚩 Pre-Snap Penalty</button>`;
     }else{
@@ -1138,6 +1146,23 @@ const Flow={
   },
 
   pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');this.showResults(t)},
+
+  startFreePunt(){
+    // Clear the flag and run the normal punt / punt-return flow from the current spot
+    gameState.freePunt=false;
+    const t=gameState.possession==='offense'?'punt':'puntreturn';
+    this.current.type=t;
+    this.current._freePunt=true;
+    document.getElementById('step-type').classList.add('hidden');
+    this.showResults(t);
+  },
+
+  skipFreePunt(){
+    // Coach declined the free kick — just play from the current spot
+    gameState.freePunt=false;
+    API.put(`/games/${currentGame.id}`,{gameState}).catch(()=>{});
+    this.restart();
+  },
 
   showResults(t){
     const el=document.getElementById('result-btns');let btns='';
