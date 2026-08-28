@@ -324,6 +324,19 @@ app.put('/api/games/:id', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Delete a game (and all its plays)
+app.delete('/api/games/:id', authenticate, async (req, res) => {
+  try {
+    const check = await supaGet('games', `id=eq.${req.params.id}&select=id,season_id`);
+    if (!check || check.length === 0) return res.status(404).json({ error: 'Game not found' });
+    const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
+    if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
+    await supaDelete('plays', `game_id=eq.${req.params.id}`);
+    await supaDelete('games', `id=eq.${req.params.id}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================================
 // PLAY ROUTES
 // ============================================================

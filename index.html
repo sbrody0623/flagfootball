@@ -751,9 +751,27 @@ const Games={
       if(!games.length){el.innerHTML='<div class="card">No games yet.</div>';return}
       el.innerHTML=games.map(g=>{
         const r=g.team_score>g.opp_score?'W':g.team_score<g.opp_score?'L':'T';
-        return`<div class="card"><h3>${g.home_away==='home'?'🏠':'✈️'} vs ${g.opponent}</h3><p><strong>${g.team_score}–${g.opp_score}</strong> (${r})</p>${g.completed?`<button class="btn btn-sm btn-secondary" onclick="Games.summary(${g.id})">Summary</button>`:`<button class="btn btn-sm btn-primary" onclick="Games.resume(${g.id})">Resume</button>`}</div>`;
+        const status=g.completed?'Final':'In Progress';
+        let actions='';
+        if(g.completed){
+          actions=`<button class="btn btn-sm btn-secondary" onclick="Games.summary(${g.id})">Summary</button>`;
+        }else{
+          actions=`<button class="btn btn-sm btn-primary" onclick="Games.resume(${g.id})">Resume</button> <button class="btn btn-sm btn-warning" onclick="Games.endFromHistory(${g.id})">🏁 End Game</button>`;
+        }
+        actions+=` <button class="btn btn-sm btn-danger" onclick="Games.deleteGame(${g.id})">🗑️ Delete</button>`;
+        return`<div class="card"><h3>${g.home_away==='home'?'🏠':'✈️'} vs ${g.opponent}</h3><p><strong>${g.team_score}–${g.opp_score}</strong> (${r}) · <small style="color:var(--muted)">${status}</small></p>${actions}</div>`;
       }).join('');
     }catch(e){alert(e.message)}
+  },
+  async deleteGame(gid){
+    if(!confirm('Delete this game and all its plays? This cannot be undone.'))return;
+    try{await API.del(`/games/${gid}`);Cache.clear();Games.loadHistory();}
+    catch(e){alert(e.message)}
+  },
+  async endFromHistory(gid){
+    if(!confirm('Mark this game as final?'))return;
+    try{await API.put(`/games/${gid}`,{completed:true});Cache.clear();Games.loadHistory();}
+    catch(e){alert(e.message)}
   },
   async resume(gid){
     try{
