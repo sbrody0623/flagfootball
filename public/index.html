@@ -1303,11 +1303,6 @@ const Flow={
     // FG short returned: this is the return yards
     if((c.type==='fg'||c.type==='fgblock')&&c._fgShortResult==='return'&&!c._fgRetYds){c._fgRetYds=val;this.showConfirm();return}
     // Penalty yards
-    if((c.result==='penalty'||c.type==='penalty')&&c._penaltySpot==='spot'&&!c._spotYardLine){
-      // This is the spot of foul yard line
-      c._spotYardLine=val;
-      YardPad.start('Penalty Yards');return;
-    }
     if(c.result==='penalty'||c.type==='penalty'){c._penaltyYds=val;c.yards=val;this.showConfirm();return}
     c.yards=val;this.showConfirm()
   },
@@ -1390,23 +1385,20 @@ const Flow={
     c._penaltySpot=spot;
     document.getElementById('step-result').classList.add('hidden');
     if(spot==='spot'){
-      // Ask: own side or opponent side
-      document.getElementById('result-label').textContent='Spot of foul — which side?';
-      document.getElementById('result-btns').innerHTML=`
-        <button class="play-btn" onclick="Flow.pickSpotSide('own')">📍 Our Side</button>
-        <button class="play-btn" onclick="Flow.pickSpotSide('opp')">📍 Their Side</button>`;
-      document.getElementById('step-result').classList.remove('hidden');
+      // Show the field — operator drags to where the foul occurred (no own/opp confusion)
+      FieldPick.startSpotFoul();
     }else{
       // LOS — just ask penalty yards
       YardPad.start('Penalty Yards');
     }
   },
 
-  pickSpotSide(side){
+  // Called by FieldPick after the operator picks the foul spot (absolute position)
+  onSpotFoulPicked(absPos){
     const c=this.current;
-    c._spotSide=side;
-    document.getElementById('step-result').classList.add('hidden');
-    YardPad.start('Spot of Foul (Yard Line)');
+    c._spotAbsolute=absPos; // absolute position in the current possessing frame
+    // Now ask for the penalty yardage
+    YardPad.start('Penalty Yards');
   },
 
   showConfirm(){
@@ -1429,9 +1421,13 @@ const Flow={
       const pen=c._penalty||'Penalty';
       const penYds=c._penaltyYds||0;
       if(c._penaltySpot==='spot'){
-        const side=c._spotSide==='own'?'own':'opp';
-        const spotYd=c._spotYardLine||0;
-        d=`🚩 ${pen} ${penYds}yds (spot: ${side} ${spotYd})`;
+        // Describe the picked spot as a yard line
+        let spotLbl='';
+        if(c._spotAbsolute!==undefined){
+          const mid=gameState.mid;const ap=c._spotAbsolute;
+          spotLbl=ap<mid?`Own ${ap}`:(ap>mid?`Opp ${gameState.fieldLength-ap}`:`Mid`);
+        }
+        d=`🚩 ${pen} ${penYds}yds (spot ${spotLbl})`;
       }else{
         d=`🚩 ${pen} ${penYds}yds (from LOS)`;
       }
@@ -1466,14 +1462,8 @@ const Flow={
       const isOffensePenalty=pen.startsWith('O');
 
       if(c._penaltySpot==='spot'){
-        // Spot foul: convert spot to absolute ball position
-        const spotYd=c._spotYardLine||0;
-        let spotAbsolute;
-        if(c._spotSide==='own'){
-          spotAbsolute=spotYd; // Own 30 = 30 from our goal
-        }else{
-          spotAbsolute=gameState.fieldLength-spotYd; // Opp 20 = fieldLength - 20
-        }
+        // Spot foul: use the absolute position the operator picked on the field
+        let spotAbsolute=(c._spotAbsolute!==undefined)?c._spotAbsolute:gameState.ballPos;
         // Apply penalty from the spot
         if(isOffensePenalty){
           gameState.ballPos=Math.max(1,spotAbsolute-penYds);
@@ -1789,6 +1779,13 @@ const FieldPick={
       YardPad.start('Punt Distance');
       return;
     }
+    if(this.mode==='spotfoul'){
+      // Fall back: default the spot to the current LOS, just ask penalty yards
+      this.mode=null;
+      Flow.current._spotAbsolute=gameState.ballPos;
+      YardPad.start('Penalty Yards');
+      return;
+    }
     YardPad.start(this.label||'Yards');
   },
 
@@ -1849,6 +1846,26 @@ const FieldPick={
     document.getElementById('step-fieldpick').classList.remove('hidden');
     this.attach();
   },
+
+  // ---- SPOT FOUL MODE (penalty) ----
+  startSpotFoul(){
+    this.mode='spotfoul';
+    this.fl=gameState.fieldLength;
+    this.startPos=gameState.ballPos;   // LOS marker for reference
+    this.endPos=gameState.ballPos;     // draggable foul spot, default at LOS
+    document.getElementById('fieldpick-label').textContent='Drag to where the FOUL occurred';
+    this.renderSpotFoul();
+    this.buildYardLines();
+    document.getElementById('step-fieldpick').classList.remove('hidden');
+    this.attach();
+  },
+  renderSpotFoul(){
+    const sFrac=this.posToFrac(this.startPos);
+    const eFrac=this.posToFrac(this.endPos);
+    document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
+    document.getElementById('fp-marker-end').style.left=(eFrac*100)+'%';
+    document.getElementById('fieldpick-readout').innerHTML=`Foul spot: <span class="yds">${this.fmtSpot(this.endPos)}</span>`;
+  },
   renderInt(){
     const sFrac=this.posToFrac(this.startPos);
     const eFrac=this.posToFrac(this.endPos);
@@ -1866,6 +1883,12 @@ const FieldPick={
   },
 
   done(){
+    if(this.mode==='spotfoul'){
+      this.mode=null;
+      document.getElementById('step-fieldpick').classList.add('hidden');
+      Flow.onSpotFoulPicked(Math.round(this.endPos));
+      return;
+    }
     if(this.mode==='int'){
       const c=Flow.current;
       if(this.intStep===1){
@@ -1931,6 +1954,7 @@ const FieldPick={
   render(){
     if(this.mode==='punt'){this.renderPunt();return;}
     if(this.mode==='int'){this.renderInt();return;}
+    if(this.mode==='spotfoul'){this.renderSpotFoul();return;}
     const sFrac=this.posToFrac(this.startPos);
     const eFrac=this.posToFrac(this.endPos);
     document.getElementById('fp-marker-start').style.left=(sFrac*100)+'%';
