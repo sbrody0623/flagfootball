@@ -518,18 +518,17 @@ const UI={
   show(id,fromBack){
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
-    // Home and auth are roots — landing on them clears the back history.
     if(id==='screen-home'||id==='screen-auth'){
+      // Roots — clear the back history
       this.navStack=[];
-      this.current=id;
-      return;
-    }
-    // Maintain a simple navigation history (skip when triggered by a back action)
-    if(!fromBack){
+    }else if(!fromBack){
+      // Record where we came from so back can return there
       if(this.current&&this.current!==id)this.navStack.push(this.current);
       if(this.navStack.length>50)this.navStack.shift();
     }
     this.current=id;
+    // Re-arm the hardware back-button trap for THIS navigation (not on back actions)
+    if(!fromBack){ try{history.pushState({ff:true},'');}catch(e){} }
   },
   // Go back one screen. Returns false if there's nowhere to go.
   goBack(){
@@ -2536,14 +2535,14 @@ window.addEventListener('beforeunload',function(e){
   }
 });
 
-// Back button behavior:
-//  - In a live game: confirm-free jump to Home (Resume button is there)
-//  - Otherwise: go back one screen in our nav history
-// We keep a trapped history state so the browser/app never exits unexpectedly.
-history.pushState({ff:true},'');
+// Hardware/browser BACK button handling.
+// Each UI.show() pushes one history entry, so every page you open is one "back".
+// On popstate we handle the back ourselves, then re-arm a trap so the NEXT back is caught too.
+try{history.pushState({ff:true},'');}catch(e){} // initial safety trap
 window.addEventListener('popstate',function(e){
-  // Always re-trap so a second back press doesn't exit the app
-  history.pushState({ff:true},'');
+  // Re-arm immediately so a subsequent back press keeps firing popstate (never exits the app)
+  try{history.pushState({ff:true},'');}catch(err){}
+
   if(isGameActive()){
     // Live game → go to Home where the Resume button appears
     const teamName=localStorage.getItem('ff_team_name')||'';
@@ -2551,16 +2550,15 @@ window.addEventListener('popstate',function(e){
     else UI.show('screen-home');
     return;
   }
-  // Not in a game → go back one screen
-  if(!UI.goBack()){
-    // Nowhere to go back to. If we're on the Home screen (logged in), confirm logout.
-    if(UI.current==='screen-home'){
-      if(confirm('Log out of the app?')){
-        Auth.logout();
-      }
-    }
-    // On the auth screen or elsewhere with empty stack — stay put
+
+  // Walk back one screen through our own nav stack
+  if(UI.goBack())return;
+
+  // Nothing left to go back to:
+  if(UI.current==='screen-home'){
+    if(confirm('Log out of the app?'))Auth.logout();
   }
+  // (auth screen or empty — stay put; app never closes)
 });
 
 // ============================================================
