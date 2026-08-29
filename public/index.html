@@ -2550,13 +2550,16 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // BACK button handling — simple and explicit.
-// We keep ONE sentinel history entry in front of the app at all times.
-// A back press consumes it -> popstate fires -> we navigate to the mapped parent
-// -> we push a fresh sentinel so the NEXT back press also fires. The app never exits.
-history.pushState({ff:1},'');           // sentinel #1 (in front of the page's own entry)
+// Keep the app trapped: whenever the user presses Back, we intercept it,
+// navigate to the mapped parent screen, and immediately re-arm the trap.
+// Two sentinels up front give a safety buffer so a fast double-press never exits.
+function armBack(){ try{history.pushState({ff:1},'');}catch(e){} }
+armBack();
+armBack();
 window.addEventListener('popstate',function(){
-  UI.handleBack();                       // go to the mapped parent screen
-  history.pushState({ff:1},'');          // restore the sentinel for the next back press
+  // Re-arm FIRST so there is always an entry ahead, then navigate.
+  armBack();
+  UI.handleBack();
 });
 
 // ============================================================
