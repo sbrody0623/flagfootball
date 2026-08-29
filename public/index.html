@@ -180,6 +180,14 @@ h3{font-size:1rem;margin-bottom:6px}
     <button class="btn btn-success" id="btn-psave" onclick="Players.save()">Add Player</button>
     <button class="btn btn-secondary hidden" id="btn-pcancel" onclick="Players.cancelEdit()">Cancel</button>
   </div>
+  <div class="card">
+    <h3 id="bulk-toggle" style="cursor:pointer;color:var(--primary)" onclick="document.getElementById('bulk-section').classList.toggle('hidden')">📋 Bulk Import (tap to expand)</h3>
+    <div id="bulk-section" class="hidden">
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">Paste one player per line as: <strong>number, name, position</strong> (position optional). Comma or tab separated.</p>
+      <textarea id="bulk-players" placeholder="12, Jordan Smith, QB&#10;7, Alex Lee, WR&#10;22, Sam Ray" style="width:100%;height:120px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;font-family:monospace"></textarea>
+      <button class="btn btn-primary" onclick="Players.bulkImport()">Import All</button>
+    </div>
+  </div>
   <div class="card"><h3>Roster</h3><ul class="player-list" id="player-list-el"></ul></div>
   <button class="btn btn-primary" onclick="Rules.show()">Next: Rules →</button>
 </div>
@@ -674,7 +682,36 @@ const Players={
     editingPid=null;document.getElementById('inp-pnum').value='';document.getElementById('inp-pname').value='';document.getElementById('inp-ppos').value='';
     document.getElementById('btn-psave').textContent='Add Player';document.getElementById('btn-pcancel').classList.add('hidden');document.getElementById('pform-title').textContent='Add Player';
   },
-  async remove(id){if(!confirm('Remove?'))return;try{await API.del('/players/'+id);Players.load()}catch(e){alert(e.message)}}
+  async remove(id){if(!confirm('Remove?'))return;try{await API.del('/players/'+id);Players.load()}catch(e){alert(e.message)}},
+  async bulkImport(){
+    const raw=document.getElementById('bulk-players').value.trim();
+    if(!raw){alert('Paste some players first');return}
+    const lines=raw.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+    const toAdd=[];
+    const errors=[];
+    lines.forEach((line,i)=>{
+      // Split on comma or tab
+      const parts=line.split(/[,\t]/).map(x=>x.trim());
+      const num=parseInt(parts[0]);
+      const name=parts[1]||'';
+      const pos=parts[2]||'';
+      if(isNaN(num)||!name){errors.push(`Line ${i+1}: "${line}"`);return;}
+      toAdd.push({number:num,name,position:pos});
+    });
+    if(!toAdd.length){alert('No valid players found.\nFormat: number, name, position');return}
+    let msg=`Import ${toAdd.length} player(s)?`;
+    if(errors.length)msg+=`\n\nSkipping ${errors.length} invalid line(s):\n`+errors.join('\n');
+    if(!confirm(msg))return;
+    let ok=0,fail=0;
+    for(const p of toAdd){
+      try{await API.post(`/seasons/${currentSeason.id}/players`,p);ok++;}
+      catch(e){fail++;}
+    }
+    document.getElementById('bulk-players').value='';
+    document.getElementById('bulk-section').classList.add('hidden');
+    alert(`✅ Imported ${ok} player(s)`+(fail?` (${fail} failed)`:''));
+    Players.load();
+  }
 };
 
 // ============================================================
