@@ -604,6 +604,7 @@ const Auth={
   async logout(){
     try{await API.post('/logout')}catch(e){}
     API.token=null;localStorage.removeItem('ff_token');localStorage.removeItem('ff_team_name');
+    UI.navStack=[];
     UI.show('screen-auth');
   },
   async check(){
@@ -2545,7 +2546,13 @@ window.addEventListener('popstate',function(e){
   }
   // Not in a game → go back one screen
   if(!UI.goBack()){
-    // Nowhere to go back to (at home/auth) — stay put
+    // Nowhere to go back to. If we're on the Home screen (logged in), confirm logout.
+    if(UI.current==='screen-home'){
+      if(confirm('Log out of the app?')){
+        Auth.logout();
+      }
+    }
+    // On the auth screen or elsewhere with empty stack — stay put
   }
 });
 
