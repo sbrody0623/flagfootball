@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Flag Football Stat Tracker</title>
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a73e8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flag Football">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{--primary:#1a73e8;--primary-dark:#1557b0;--danger:#dc3545;--success:#28a745;--warning:#ffc107;--bg:#f0f2f5;--card:#ffffff;--text:#212529;--muted:#6c757d;--border:#dee2e6;--radius:10px}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -502,7 +510,26 @@ window.addEventListener('online',()=>{
 // UI
 // ============================================================
 const UI={
-  show(id){document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));document.getElementById(id).classList.remove('hidden')},
+  navStack:[],
+  current:'screen-auth',
+  show(id,fromBack){
+    document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    // Maintain a simple navigation history (skip when triggered by a back action)
+    if(!fromBack){
+      if(this.current&&this.current!==id)this.navStack.push(this.current);
+      // Avoid unbounded growth
+      if(this.navStack.length>50)this.navStack.shift();
+    }
+    this.current=id;
+  },
+  // Go back one screen. Returns false if there's nowhere to go.
+  goBack(){
+    if(this.navStack.length===0)return false;
+    const prev=this.navStack.pop();
+    this.show(prev,true);
+    return true;
+  },
   showError(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000)}
 };
 
@@ -542,6 +569,7 @@ const Auth={
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
     Auth.checkActiveGame(teamName);
+    UI.navStack=[]; // home is the root — clear back history
     UI.show('screen-home');
   },
   async checkActiveGame(teamName){
@@ -2499,22 +2527,35 @@ window.addEventListener('beforeunload',function(e){
   }
 });
 
-// Back button while a game is in progress → go to Home (Resume button is there),
-// instead of exiting the app. Progress is already saved.
+// Back button behavior:
+//  - In a live game: confirm-free jump to Home (Resume button is there)
+//  - Otherwise: go back one screen in our nav history
+// We keep a trapped history state so the browser/app never exits unexpectedly.
 history.pushState({ff:true},'');
 window.addEventListener('popstate',function(e){
+  // Always re-trap so a second back press doesn't exit the app
+  history.pushState({ff:true},'');
   if(isGameActive()){
-    // Keep trapping the back button so a second press doesn't exit the site
-    history.pushState({ff:true},'');
-    // Take them to Home where the "Resume Game" button appears
+    // Live game → go to Home where the Resume button appears
     const teamName=localStorage.getItem('ff_team_name')||'';
-    if(typeof Auth!=='undefined'&&Auth.onLoggedIn){
-      Auth.onLoggedIn(teamName);
-    }else{
-      UI.show('screen-home');
-    }
+    if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
+    else UI.show('screen-home');
+    return;
+  }
+  // Not in a game → go back one screen
+  if(!UI.goBack()){
+    // Nowhere to go back to (at home/auth) — stay put
   }
 });
+
+// ============================================================
+// PWA: register service worker for install + offline shell
+// ============================================================
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
 
 // ============================================================
 // INIT
