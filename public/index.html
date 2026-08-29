@@ -2350,18 +2350,19 @@ window.addEventListener('beforeunload',function(e){
   }
 });
 
-// Guard the mobile/browser back button while a game is in progress.
-// Push a history state so the first back press is trapped and we can confirm.
+// Back button while a game is in progress → go to Home (Resume button is there),
+// instead of exiting the app. Progress is already saved.
 history.pushState({ff:true},'');
 window.addEventListener('popstate',function(e){
   if(isGameActive()){
-    const stay=!confirm('Leave the game? Your progress is saved, but you will exit the live tracker.');
-    if(stay){
-      // Re-push a state to keep trapping the back button
-      history.pushState({ff:true},'');
+    // Keep trapping the back button so a second press doesn't exit the site
+    history.pushState({ff:true},'');
+    // Take them to Home where the "Resume Game" button appears
+    const teamName=localStorage.getItem('ff_team_name')||'';
+    if(typeof Auth!=='undefined'&&Auth.onLoggedIn){
+      Auth.onLoggedIn(teamName);
     }else{
-      // User chose to leave — go back to the season dashboard instead of exiting the site
-      Seasons.showDash();
+      UI.show('screen-home');
     }
   }
 });
