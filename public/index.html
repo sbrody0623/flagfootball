@@ -524,7 +524,10 @@ const UI={
   goHome(){ Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); },
   handleBack(){
     switch(this.current){
-      case 'screen-game':         this.goHome(); break;            // Live game → Home (review/resume)
+      case 'screen-game':
+        // Confirm before leaving a live game
+        if(confirm('Leave the game? Your progress is saved — you can Resume from Home.'))this.goHome();
+        break;
       case 'screen-summary':      Games.loadHistory(); break;      // → Game History
       case 'screen-history':      Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-players':      Seasons.showDash();  break;      // → Season Dashboard
@@ -2534,20 +2537,16 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // BACK button handling.
-// Establish the trap once the page is ready, then re-arm after each back press.
-function armBack(){ try{ history.pushState({ff:Date.now()},''); }catch(e){} }
+// Keep exactly ONE trap history entry ahead of the app at all times.
+function armBack(){ try{ history.pushState({ff:1},''); }catch(e){} }
 
-window.addEventListener('load', function(){
-  // Push the trap AFTER load so it sits on top of the page's own history entry.
-  armBack();
-});
+// Arm the initial trap immediately (script runs at end of body, DOM is ready).
+armBack();
 
 window.addEventListener('popstate', function(){
-  // The trap was consumed by this back press. Re-arm immediately AND on next tick
-  // (covers browsers that drop a synchronous re-arm), then navigate.
-  armBack();
-  setTimeout(armBack, 0);
+  // A back press consumed the trap. Navigate to the mapped parent, then re-arm ONE trap.
   UI.handleBack();
+  armBack();
 });
 
 // ============================================================
