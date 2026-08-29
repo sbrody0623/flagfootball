@@ -1841,7 +1841,18 @@ const FieldPick={
     this.fl=gameState.fieldLength;
     this.startPos=gameState.ballPos;
     this.endPos=gameState.ballPos;
-    document.getElementById('fieldpick-label').textContent='Drag the 🏈 to where the ball ended';
+    // Directional constraint: on a loss/sack the ball can ONLY go backward (toward own EZ).
+    const c=Flow.current;
+    const isLoss=(c&&(c.result==='loss'||c.result==='sack'));
+    if(isLoss){
+      this.minPos=0;                 // own end zone (safety)
+      this.maxPos=gameState.ballPos; // cannot pass the LOS forward
+      document.getElementById('fieldpick-label').textContent='Loss/Sack — drag BACK toward your end zone';
+    }else{
+      this.minPos=0;
+      this.maxPos=this.fl;
+      document.getElementById('fieldpick-label').textContent='Drag the 🏈 to where the ball ended';
+    }
     this.render();
     this.buildYardLines();
     document.getElementById('step-fieldpick').classList.remove('hidden');
@@ -1857,7 +1868,11 @@ const FieldPick={
   fracToPos(frac){
     const playable=1-2*this.ezFrac;
     let p=((frac-this.ezFrac)/playable)*this.fl;
-    return Math.max(0,Math.min(this.fl,p));
+    p=Math.max(0,Math.min(this.fl,p));
+    // Apply directional constraint if set
+    if(this.minPos!==undefined)p=Math.max(this.minPos,p);
+    if(this.maxPos!==undefined)p=Math.min(this.maxPos,p);
+    return p;
   },
 
   buildYardLines(){
@@ -1942,6 +1957,7 @@ const FieldPick={
     const c=Flow.current;
     this.mode='punt';
     this.fl=gameState.fieldLength;
+    this.minPos=0;this.maxPos=this.fl;
     this.puntStep=1;
     // In both cases the "kicking" team's LOS is gameState.ballPos in the current possessing frame.
     // We render the field in the possessing frame (drives left->right); punt travels right toward opp goal.
@@ -1978,6 +1994,7 @@ const FieldPick={
     const c=Flow.current;
     this.mode='int';
     this.fl=gameState.fieldLength;
+    this.minPos=0;this.maxPos=this.fl;
     this.intStep=1;
     // Rendered in the current possessing (passing team) frame, driving left->right.
     this.startPos=gameState.ballPos; // LOS where the pass started
@@ -1994,6 +2011,7 @@ const FieldPick={
   startSpotFoul(){
     this.mode='spotfoul';
     this.fl=gameState.fieldLength;
+    this.minPos=0;this.maxPos=this.fl;
     this.startPos=gameState.ballPos;   // LOS marker for reference
     this.endPos=gameState.ballPos;     // draggable foul spot, default at LOS
     document.getElementById('fieldpick-label').textContent='Drag to where the FOUL occurred';
