@@ -521,23 +521,18 @@ const UI={
     this.current=id;
   },
   // Browser/hardware BACK does exactly what the on-screen "← Back" link does for each screen.
+  goHome(){ Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); },
   handleBack(){
-    // Live game → always go Home (review / resume)
-    if(typeof isGameActive==='function'&&isGameActive()){
-      const teamName=localStorage.getItem('ff_team_name')||'';
-      Auth.onLoggedIn(teamName);
-      return;
-    }
     switch(this.current){
+      case 'screen-game':         this.goHome(); break;            // Live game → Home (review/resume)
       case 'screen-summary':      Games.loadHistory(); break;      // → Game History
       case 'screen-history':      Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-players':      Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-rules':        Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-new-game':     Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-game':         { Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); break; } // → Home
       case 'screen-dash':         Seasons.loadList();  break;      // → Seasons list
       case 'screen-create-season':Seasons.loadList();  break;      // → Seasons list
-      case 'screen-seasons':      Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); break; // → Home
+      case 'screen-seasons':      this.goHome();       break;      // → Home
       case 'screen-home':         if(confirm('Log out of the app?'))Auth.logout(); break;
       default: /* auth screen — stay put */ break;
     }
