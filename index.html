@@ -1380,11 +1380,18 @@ const Flow={
     // Penalty yards
     if(c.result==='penalty'||c.type==='penalty'){
       c._penaltyYds=val;c.yards=val;
-      // Defensive penalty (starts with D) — ask if it's an automatic first down
       const pen=c._penalty||'';
       if(pen.startsWith('D')){
+        // Defensive penalty — ask if it's an automatic first down
         document.getElementById('result-label').textContent='Automatic first down?';
         document.getElementById('result-btns').innerHTML=`<button class="play-btn" style="background:#e8f5e9;color:#2e7d32" onclick="Flow.setAutoFD(true)">✅ Yes — Auto 1st Down</button><button class="play-btn" onclick="Flow.setAutoFD(false)">No — replay down</button>`;
+        document.getElementById('step-result').classList.remove('hidden');
+        return;
+      }
+      if(pen.startsWith('O')){
+        // Offensive penalty — ask if it carries a loss of down
+        document.getElementById('result-label').textContent='Loss of down?';
+        document.getElementById('result-btns').innerHTML=`<button class="play-btn" style="background:#ffebee;color:#c62828" onclick="Flow.setLossOfDown(true)">⬇️ Yes — Loss of Down</button><button class="play-btn" onclick="Flow.setLossOfDown(false)">No — replay down</button>`;
         document.getElementById('step-result').classList.remove('hidden');
         return;
       }
@@ -1394,6 +1401,11 @@ const Flow={
   },
   setAutoFD(v){
     this.current._autoFirstDown=v;
+    document.getElementById('step-result').classList.add('hidden');
+    this.showConfirm();
+  },
+  setLossOfDown(v){
+    this.current._lossOfDown=v;
     document.getElementById('step-result').classList.add('hidden');
     this.showConfirm();
   },
@@ -1523,6 +1535,7 @@ const Flow={
         d=`🚩 ${pen} ${penYds}yds (from LOS)`;
       }
       if(c._autoFirstDown)d+=' + Auto 1st Down';
+      if(c._lossOfDown)d+=' + Loss of Down';
       return d;
     }
     if(gameState.possession==='offense'){
@@ -1575,10 +1588,19 @@ const Flow={
         }
       }
 
-      // Automatic first down (defensive penalty flagged as auto 1st down)
+      // Down handling for penalties
+      let lostOnDowns=false;
       if(c._autoFirstDown){
+        // Defensive penalty auto first down
         gameState.down=1;
         gameState.firstDownLine=Engine.nextFD(gameState.ballPos,gameState.fieldLength);
+      }else if(c._lossOfDown){
+        // Offensive penalty with loss of down — advance the down
+        gameState.down++;
+        if(gameState.down>4){
+          // Turnover on downs
+          lostOnDowns=true;
+        }
       }else if(gameState.ballPos>=gameState.firstDownLine){
         // Crossed the marker → first down anyway
         gameState.down=1;
@@ -1589,12 +1611,18 @@ const Flow={
       // Calculate net yards for description
       const netYds=gameState.ballPos-prevState.ballPos;
       const netDesc=netYds>=0?`+${netYds}yds`:`${netYds}yds`;
-      const afdDesc=c._autoFirstDown?' + Auto 1st Down':'';
+      const afdDesc=c._autoFirstDown?' + Auto 1st Down':(c._lossOfDown?' + Loss of Down':'');
 
       // Save and exit
+      let penFinalDesc=desc+` (net ${netDesc}${afdDesc})`;
+      // If loss of down caused a turnover on downs, hand the ball over
+      if(lostOnDowns){
+        penFinalDesc+=' → Turnover on downs!';
+        Engine.turnover();
+      }
       const penPlayers=Object.assign({},c.players||{});
       penPlayers._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
-      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc}${afdDesc})`,quarter:gameState.quarter||1,penalty:pen};
+      const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:penFinalDesc,quarter:gameState.quarter||1,penalty:pen};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
       try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
