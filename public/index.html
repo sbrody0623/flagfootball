@@ -867,12 +867,17 @@ const Games={
       const g=games.find(x=>x.id===gid);if(!g)return;
       const plays=await API.get(`/games/${gid}/plays`);
       const teamName=localStorage.getItem('ff_team_name')||'Us';
+      // Ensure roster is loaded so the box score can show player names
+      try{playerList=await API.get(`/seasons/${currentSeason.id}/players`);}catch(e){}
       const statsHtml=Stats.buildGameStats(plays);
-      // Store plays globally for quarter filtering
+      // Store plays + game meta globally for quarter filtering / box score
       window._summaryPlays=plays;
+      window._summaryGame=g;
+      window._summaryTeamName=teamName;
       document.getElementById('summary-el').innerHTML=`
         <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
-        <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p></div>
+        <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p>
+        <button class="btn btn-primary" onclick="Stats.printBoxScore()">📄 Download / Print Box Score</button></div>
         <div class="card"><h3>📊 Stats by Quarter</h3><div class="action-row" style="margin-bottom:10px">
           <button class="btn btn-sm btn-primary" onclick="Stats.filterQtr(0)">Full Game</button>
           <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(1)">Q1</button>
@@ -1094,6 +1099,150 @@ const Stats={
 
     if(!html) html='<div class="card"><p>No individual stats recorded.</p></div>';
     return html;
+  },
+
+  // Map jersey # to "#N Name" using the loaded roster
+  playerLabel(num){
+    if(num==='Team'||num==='team')return 'Team';
+    const pl=(typeof playerList!=='undefined'&&playerList)?playerList.find(p=>String(p.number)===String(num)):null;
+    return pl?`#${num} ${pl.name}`:`#${num}`;
+  },
+
+  // Build a printable, MaxPreps-style box score and open it in a new window
+  printBoxScore(){
+    const plays=window._summaryPlays||[];
+    const g=window._summaryGame||{};
+    const teamName=window._summaryTeamName||'Us';
+
+    // ---- Aggregate (self-contained) ----
+    const passing={},rushing={},receiving={},defense={},punting={},puntRet={},kicking={},scoring={},ints={};
+    const ensD=(o,k)=>{if(!o[k])o[k]={tackles:0,sacks:0,sackYds:0,int:0,intYds:0,pd:0}};
+    const ensScore=(k)=>{if(!scoring[k])scoring[k]={pts:0,td:0,xp:0,xpAtt:0,fg:0,fgAtt:0,saf:0}};
+    for(const play of plays){
+      const p=play.players||{};
+      const type=play.play_type||play.playType||play.type||'';
+      const result=play.result||'';
+      const yds=play.yards||0;
+      const side=play.possession||'offense';
+      const isTD=(play.description||'').includes('TOUCHDOWN');
+      if(side==='offense'){
+        if(type==='pass'&&p.qb){
+          if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0,long:0};
+          if(result==='sack'){passing[p.qb].sacks++;if(!rushing[p.qb])rushing[p.qb]={att:0,yds:0,td:0,long:0};rushing[p.qb].att++;rushing[p.qb].yds+=-Math.abs(yds);}
+          else{passing[p.qb].att++;if(result==='complete'){passing[p.qb].comp++;passing[p.qb].yds+=yds;if(yds>passing[p.qb].long)passing[p.qb].long=yds;if(isTD)passing[p.qb].td++;}if(result==='interception')passing[p.qb].int++;}
+        }
+        if(type==='run'&&p.carrier){if(!rushing[p.carrier])rushing[p.carrier]={att:0,yds:0,td:0,long:0};rushing[p.carrier].att++;rushing[p.carrier].yds+=yds;if(yds>rushing[p.carrier].long)rushing[p.carrier].long=yds;if(isTD){rushing[p.carrier].td++;ensScore(p.carrier);scoring[p.carrier].td++;scoring[p.carrier].pts+=6;}}
+        if(type==='pass'&&result==='complete'&&p.receiver){if(!receiving[p.receiver])receiving[p.receiver]={rec:0,yds:0,td:0,long:0};receiving[p.receiver].rec++;receiving[p.receiver].yds+=yds;if(yds>receiving[p.receiver].long)receiving[p.receiver].long=yds;if(isTD){receiving[p.receiver].td++;ensScore(p.receiver);scoring[p.receiver].td++;scoring[p.receiver].pts+=6;}}
+        if(type==='punt'&&p.punter){if(!punting[p.punter])punting[p.punter]={punts:0,yds:0,long:0};punting[p.punter].punts++;punting[p.punter].yds+=yds;if(yds>punting[p.punter].long)punting[p.punter].long=yds;}
+        if(type==='punt'&&result==='return'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+        if(type==='fg'&&p.kicker){if(!kicking[p.kicker])kicking[p.kicker]={fgAtt:0,fgMade:0,xpAtt:0,xpMade:0};kicking[p.kicker].fgAtt++;if(result==='good'){kicking[p.kicker].fgMade++;ensScore(p.kicker);scoring[p.kicker].fg++;scoring[p.kicker].fgAtt++;scoring[p.kicker].pts+=3;}else{ensScore(p.kicker);scoring[p.kicker].fgAtt++;}}
+        if(type==='xp'){const desc=play.description||'';if(desc.includes('Our XP')){const k=(p.kicker&&p.kicker!=='')?p.kicker:'Team';if(!kicking[k])kicking[k]={fgAtt:0,fgMade:0,xpAtt:0,xpMade:0};kicking[k].xpAtt++;ensScore(k);scoring[k].xpAtt++;if(result==='good'){kicking[k].xpMade++;scoring[k].xp++;scoring[k].pts+=(desc.includes('2pt')?2:1);}}}
+      }
+      if(side==='defense'){
+        if(type==='pass'){
+          if(result==='complete'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+          if(result==='incomplete'&&p.defender){ensD(defense,p.defender);defense[p.defender].pd++;}
+          if(result==='interception'&&p.interceptor){ensD(defense,p.interceptor);defense[p.interceptor].int++;const ir=(p._intRetYds!==undefined?p._intRetYds:yds);defense[p.interceptor].intYds+=ir;if(!ints[p.interceptor])ints[p.interceptor]={int:0,yds:0,pd:0};ints[p.interceptor].int++;ints[p.interceptor].yds+=ir;}
+          if(result==='sack'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].sacks++;defense[p.flagPuller].sackYds+=Math.abs(yds);}
+        }
+        if(type==='run'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+        if(type==='fgblock'&&result==='blocked'&&p.blocker){ensD(defense,p.blocker);defense[p.blocker].pd++;}
+        if(type==='puntreturn'&&result==='return'&&p.returner){const r=(p._retYds!==undefined?p._retYds:0);if(!puntRet[p.returner])puntRet[p.returner]={ret:0,yds:0,long:0};puntRet[p.returner].ret++;puntRet[p.returner].yds+=r;if(r>puntRet[p.returner].long)puntRet[p.returner].long=r;}
+      }
+    }
+
+    // ---- Build table HTML ----
+    const L=this.playerLabel.bind(this);
+    const tbl=(title,cols,rows,totals)=>{
+      if(!rows.length)return '';
+      let h=`<h3>${title}</h3><table><thead><tr><th>Player</th>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+      h+=rows.map(r=>`<tr><td class="pl">${r.label}</td>${r.vals.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('');
+      if(totals)h+=`<tr class="tot"><td class="pl">Team Totals</td>${totals.map(v=>`<td>${v}</td>`).join('')}</tr>`;
+      h+='</tbody></table>';
+      return h;
+    };
+    const sum=(obj,f)=>Object.values(obj).reduce((a,o)=>a+(o[f]||0),0);
+    const maxOf=(obj,f)=>Object.values(obj).reduce((a,o)=>Math.max(a,o[f]||0),0);
+
+    // Passing
+    const passRows=Object.keys(passing).map(n=>{const s=passing[n];const pct=s.att?(s.comp/s.att).toFixed(3).replace(/^0/,''):'.000';const avg=s.comp?(s.yds/s.comp).toFixed(1):'0.0';return{label:L(n),vals:[s.comp,s.att,s.yds,pct,avg,s.td,s.int,s.long]}});
+    const passTot=passRows.length?[sum(passing,'comp'),sum(passing,'att'),sum(passing,'yds'),(sum(passing,'att')?(sum(passing,'comp')/sum(passing,'att')).toFixed(3).replace(/^0/,''):'.000'),(sum(passing,'comp')?(sum(passing,'yds')/sum(passing,'comp')).toFixed(1):'0.0'),sum(passing,'td'),sum(passing,'int'),maxOf(passing,'long')]:null;
+
+    // Rushing
+    const rushRows=Object.keys(rushing).map(n=>{const s=rushing[n];const avg=s.att?(s.yds/s.att).toFixed(1):'0.0';return{label:L(n),vals:[s.att,s.yds,avg,s.long,s.td]}});
+    const rushTot=rushRows.length?[sum(rushing,'att'),sum(rushing,'yds'),(sum(rushing,'att')?(sum(rushing,'yds')/sum(rushing,'att')).toFixed(1):'0.0'),maxOf(rushing,'long'),sum(rushing,'td')]:null;
+
+    // Receiving
+    const recRows=Object.keys(receiving).map(n=>{const s=receiving[n];const avg=s.rec?(s.yds/s.rec).toFixed(1):'0.0';return{label:L(n),vals:[s.rec,s.yds,avg,s.long,s.td]}});
+    const recTot=recRows.length?[sum(receiving,'rec'),sum(receiving,'yds'),(sum(receiving,'rec')?(sum(receiving,'yds')/sum(receiving,'rec')).toFixed(1):'0.0'),maxOf(receiving,'long'),sum(receiving,'td')]:null;
+
+    // Flag Pulls (tackles)
+    const defRows=Object.keys(defense).filter(n=>defense[n].tackles>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.tackles,s.tackles]}});
+    const defTot=defRows.length?[sum(defense,'tackles'),sum(defense,'tackles')]:null;
+
+    // Sacks
+    const sackRows=Object.keys(defense).filter(n=>defense[n].sacks>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.sacks.toFixed(1),s.sackYds]}});
+    const sackTot=sackRows.length?[sum(defense,'sacks').toFixed(1),sum(defense,'sackYds')]:null;
+
+    // Interceptions
+    const intRows=Object.keys(ints).map(n=>{const s=ints[n];return{label:L(n),vals:[s.int,s.yds]}});
+    const intTot=intRows.length?[sum(ints,'int'),sum(ints,'yds')]:null;
+
+    // Punting
+    const puntRows=Object.keys(punting).map(n=>{const s=punting[n];const avg=s.punts?(s.yds/s.punts).toFixed(1):'0.0';return{label:L(n),vals:[s.punts,s.yds,avg,s.long]}});
+    const puntTot=puntRows.length?[sum(punting,'punts'),sum(punting,'yds'),(sum(punting,'punts')?(sum(punting,'yds')/sum(punting,'punts')).toFixed(1):'0.0'),maxOf(punting,'long')]:null;
+
+    // Punt Returns
+    const prRows=Object.keys(puntRet).map(n=>{const s=puntRet[n];const avg=s.ret?(s.yds/s.ret).toFixed(1):'0.0';return{label:L(n),vals:[s.ret,s.yds,avg,s.long]}});
+    const prTot=prRows.length?[sum(puntRet,'ret'),sum(puntRet,'yds'),(sum(puntRet,'ret')?(sum(puntRet,'yds')/sum(puntRet,'ret')).toFixed(1):'0.0'),maxOf(puntRet,'long')]:null;
+
+    // Kicking
+    const kickRows=Object.keys(kicking).map(n=>{const s=kicking[n];return{label:L(n),vals:[`${s.fgMade}/${s.fgAtt}`,`${s.xpMade}/${s.xpAtt}`]}});
+    const kickTot=kickRows.length?[`${sum(kicking,'fgMade')}/${sum(kicking,'fgAtt')}`,`${sum(kicking,'xpMade')}/${sum(kicking,'xpAtt')}`]:null;
+
+    // Scoring
+    const scoreRows=Object.keys(scoring).map(n=>{const s=scoring[n];return{label:L(n),vals:[s.pts,s.td,`${s.xp}/${s.xpAtt}`,`${s.fg}/${s.fgAtt}`]}});
+    const scoreTot=scoreRows.length?[sum(scoring,'pts'),sum(scoring,'td'),`${sum(scoring,'xp')}/${sum(scoring,'xpAtt')}`,`${sum(scoring,'fg')}/${sum(scoring,'fgAtt')}`]:null;
+
+    let body='';
+    body+=tbl('Passing',['Comp','Att','Yds','Comp%','Avg','TD','Int','Lng'],passRows,passTot);
+    body+=tbl('Rushing',['Car','Yds','Avg','Long','TD'],rushRows,rushTot);
+    body+=tbl('Receiving',['Rec','Yds','Avg','Long','TD'],recRows,recTot);
+    body+=tbl('Flag Pulls',['Solo','Tot'],defRows,defTot);
+    body+=tbl('Sacks',['Sacks','Yds'],sackRows,sackTot);
+    body+=tbl('Interceptions',['Int','Int Yds'],intRows,intTot);
+    body+=tbl('Punting',['Punts','Yds','Avg','Long'],puntRows,puntTot);
+    body+=tbl('Punt Returns',['Ret','Yds','Avg','Long'],prRows,prTot);
+    body+=tbl('Kicking',['FG','XP'],kickRows,kickTot);
+    body+=tbl('Scoring',['Pts','TD','XP','FG'],scoreRows,scoreTot);
+    if(!body)body='<p>No individual stats recorded.</p>';
+
+    const dateStr=g.created_at?new Date(g.created_at).toLocaleDateString():new Date().toLocaleDateString();
+    const win=window.open('','_blank');
+    if(!win){alert('Please allow pop-ups to download the box score.');return;}
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Box Score — ${teamName} vs ${g.opponent}</title>
+      <style>
+      body{font-family:-apple-system,Arial,sans-serif;color:#222;margin:24px;font-size:13px}
+      h1{font-size:20px;margin:0 0 2px}
+      .sub{color:#666;font-size:13px;margin-bottom:14px}
+      .score{font-size:22px;font-weight:800;margin:8px 0}
+      h3{font-size:14px;margin:18px 0 4px;border-bottom:2px solid #333;padding-bottom:2px}
+      table{width:100%;border-collapse:collapse;margin-bottom:6px}
+      th,td{text-align:center;padding:4px 6px;border-bottom:1px solid #ddd;font-size:12px}
+      th{background:#f2f2f2}
+      td.pl,th:first-child{text-align:left}
+      tr.tot td{font-weight:700;border-top:2px solid #333;background:#fafafa}
+      .print-btn{display:inline-block;margin-bottom:14px;padding:10px 18px;background:#1a73e8;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}
+      @media print{.print-btn{display:none}}
+      </style></head><body>
+      <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      <h1>${teamName} ${g.home_away==='home'?'vs':'@'} ${g.opponent}</h1>
+      <div class="sub">${dateStr} · ${g.field_length}yd field · ${g.completed?'Final':'In progress'}</div>
+      <div class="score">${teamName} ${g.team_score} — ${g.opp_score} ${g.opponent}</div>
+      <h2 style="font-size:15px;margin-top:16px">${teamName} — Box Score</h2>
+      ${body}
+      </body></html>`);
+    win.document.close();
   }
 };
 
