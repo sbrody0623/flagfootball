@@ -516,10 +516,15 @@ const UI={
   show(id,fromBack){
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
+    // Home and auth are roots — landing on them clears the back history.
+    if(id==='screen-home'||id==='screen-auth'){
+      this.navStack=[];
+      this.current=id;
+      return;
+    }
     // Maintain a simple navigation history (skip when triggered by a back action)
     if(!fromBack){
       if(this.current&&this.current!==id)this.navStack.push(this.current);
-      // Avoid unbounded growth
       if(this.navStack.length>50)this.navStack.shift();
     }
     this.current=id;
