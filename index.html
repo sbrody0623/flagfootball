@@ -2313,6 +2313,39 @@ const GameActions={
 };
 
 // ============================================================
+// LEAVE-GAME GUARD (back button / tab close during a live game)
+// ============================================================
+function isGameActive(){
+  const gs=document.getElementById('screen-game');
+  return gs && !gs.classList.contains('hidden') && currentGame && !currentGame.completed;
+}
+
+// Warn on tab close / refresh while a game is in progress
+window.addEventListener('beforeunload',function(e){
+  if(isGameActive()){
+    e.preventDefault();
+    e.returnValue=''; // triggers the browser's native confirm dialog
+    return '';
+  }
+});
+
+// Guard the mobile/browser back button while a game is in progress.
+// Push a history state so the first back press is trapped and we can confirm.
+history.pushState({ff:true},'');
+window.addEventListener('popstate',function(e){
+  if(isGameActive()){
+    const stay=!confirm('Leave the game? Your progress is saved, but you will exit the live tracker.');
+    if(stay){
+      // Re-push a state to keep trapping the back button
+      history.pushState({ff:true},'');
+    }else{
+      // User chose to leave — go back to the season dashboard instead of exiting the site
+      Seasons.showDash();
+    }
+  }
+});
+
+// ============================================================
 // INIT
 // ============================================================
 Auth.check();
