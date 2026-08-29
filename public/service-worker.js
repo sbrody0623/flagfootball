@@ -2,11 +2,9 @@
 // Caches the app shell so it installs and loads offline.
 // Network-first for navigation/pages so updates and API calls always work.
 
-const CACHE = 'ff-tracker-v3';
-// Do NOT cache manifest.json — it must stay fresh so the install name/icon update.
+const CACHE = 'ff-tracker-v4';
+// Only cache icons. HTML/JS is always fetched fresh so code updates apply immediately.
 const SHELL = [
-  './',
-  './index.html',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -42,11 +40,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // For page navigations: network-first, fall back to cached shell
-  if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req).catch(() => caches.match('./index.html'))
-    );
+  // HTML pages: ALWAYS network (no caching) so code updates apply immediately.
+  if (req.mode === 'navigate' || (req.headers.get('accept')||'').includes('text/html')) {
+    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
     return;
   }
 

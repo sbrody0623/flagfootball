@@ -2533,16 +2533,20 @@ window.addEventListener('beforeunload',function(e){
   }
 });
 
-// BACK button handling — simple and explicit.
-// Keep the app trapped: whenever the user presses Back, we intercept it,
-// navigate to the mapped parent screen, and immediately re-arm the trap.
-// Two sentinels up front give a safety buffer so a fast double-press never exits.
-function armBack(){ try{history.pushState({ff:1},'');}catch(e){} }
-armBack();
-armBack();
-window.addEventListener('popstate',function(){
-  // Re-arm FIRST so there is always an entry ahead, then navigate.
+// BACK button handling.
+// Establish the trap once the page is ready, then re-arm after each back press.
+function armBack(){ try{ history.pushState({ff:Date.now()},''); }catch(e){} }
+
+window.addEventListener('load', function(){
+  // Push the trap AFTER load so it sits on top of the page's own history entry.
   armBack();
+});
+
+window.addEventListener('popstate', function(){
+  // The trap was consumed by this back press. Re-arm immediately AND on next tick
+  // (covers browsers that drop a synchronous re-arm), then navigate.
+  armBack();
+  setTimeout(armBack, 0);
   UI.handleBack();
 });
 
