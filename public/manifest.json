@@ -1,6 +1,6 @@
 {
-  "name": "Flag Football Stat Tracker",
-  "short_name": "Flag Football",
+  "name": "Flag Stats",
+  "short_name": "Flag Stats",
   "description": "Live flag football game stat tracker",
   "start_url": ".",
   "scope": ".",
