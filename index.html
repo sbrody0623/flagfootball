@@ -17,7 +17,8 @@
 :root{--primary:#1a73e8;--primary-dark:#1557b0;--danger:#dc3545;--success:#28a745;--warning:#ffc107;--bg:#f0f2f5;--card:#ffffff;--text:#212529;--muted:#6c757d;--border:#dee2e6;--radius:10px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
-.app-header{background:#1a1a2e;color:#fff;text-align:center;font-size:0.85rem;font-weight:600;padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;z-index:50}
+.app-header{background:var(--bg);color:var(--primary);text-align:center;font-size:1.25rem;font-weight:800;padding:12px 10px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;z-index:50}
+@media(max-width:400px){.app-header{font-size:1.05rem}}
 .container{max-width:500px;margin:0 auto;padding:10px;padding-bottom:60px}
 h1{font-size:1.4rem;text-align:center;padding:14px 0 6px;color:var(--primary)}
 h2{font-size:1.15rem;margin-bottom:10px}
@@ -109,7 +110,6 @@ h3{font-size:1rem;margin-bottom:6px}
 
 <!-- LOGIN / REGISTER -->
 <div id="screen-auth">
-  <h1>🏈 Flag Stats</h1>
   <div class="card">
     <div id="auth-login">
       <h3>Team Login</h3>
