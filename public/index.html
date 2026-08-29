@@ -271,6 +271,7 @@ h3{font-size:1rem;margin-bottom:6px}
     <div class="poss" id="g-sync" style="color:#ffeb3b;font-size:0.75rem"></div>
   </div>
   <div id="play-flow" class="card">
+    <button class="btn btn-secondary btn-sm hidden" id="cancel-play-btn" style="width:100%;margin-bottom:8px" onclick="Flow.restart()">✗ Cancel / Change Play Type</button>
     <div id="step-type"><div class="step-label">What type of play?</div><div class="play-btn-grid" id="type-btns"></div></div>
     <div id="step-result" class="hidden"><div class="step-label" id="result-label">Result?</div><div class="play-btn-grid" id="result-btns"></div></div>
     <div id="step-player" class="hidden">
@@ -1225,6 +1226,7 @@ const Flow={
     document.getElementById('step-yards').classList.add('hidden');
     document.getElementById('step-fieldpick').classList.add('hidden');
     document.getElementById('step-confirm').classList.add('hidden');
+    document.getElementById('cancel-play-btn').classList.add('hidden'); // hidden on type-select
     this.renderTypeButtons();
   },
 
@@ -1242,7 +1244,7 @@ const Flow={
     }
   },
 
-  pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');this.showResults(t)},
+  pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');document.getElementById('cancel-play-btn').classList.remove('hidden');this.showResults(t)},
 
   startFreePunt(){
     // Clear the flag and run the normal punt / punt-return flow from the current spot
@@ -1251,6 +1253,7 @@ const Flow={
     this.current.type=t;
     this.current._freePunt=true;
     document.getElementById('step-type').classList.add('hidden');
+    document.getElementById('cancel-play-btn').classList.remove('hidden');
     this.showResults(t);
   },
 
