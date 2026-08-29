@@ -530,18 +530,15 @@ const UI={
     'screen-game':'screen-home',
     'screen-import':'screen-home'
   },
-  _suppressPush:false,
   show(id){
+    // Pure screen switch. Nothing to do with browser history.
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
-    // Push a history entry for each forward navigation so the hardware back button
-    // always has something to pop. Suppressed while handling a back press.
-    if(!this._suppressPush){ try{history.pushState({ffScreen:id},'');}catch(e){} }
   },
-  // Handle a back request based on the current screen's mapped destination.
+  // Where should BACK go from the current screen?  Simple, explicit.
   handleBack(){
-    // Live game: always go to Home (review / resume) regardless of map
+    // Live game: go Home (review / resume)
     if(typeof isGameActive==='function'&&isGameActive()){
       const teamName=localStorage.getItem('ff_team_name')||'';
       if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
@@ -2552,18 +2549,14 @@ window.addEventListener('beforeunload',function(e){
   }
 });
 
-// Hardware/browser BACK button handling.
-// UI.show() pushes a real history entry per forward navigation, so the OS back button
-// has genuine depth. On popstate (a back press) we route to the current screen's mapped
-// parent WITHOUT pushing a new forward entry, then keep one buffer entry so we never
-// run out and accidentally exit the app.
-try{history.pushState({ffScreen:'base'},'');}catch(e){} // base buffer entry
-window.addEventListener('popstate',function(e){
-  UI._suppressPush=true;
-  UI.handleBack();
-  UI._suppressPush=false;
-  // Keep a buffer entry ahead so the next hardware back still fires popstate
-  try{history.pushState({ffScreen:UI.current},'');}catch(err){}
+// BACK button handling — simple and explicit.
+// We keep ONE sentinel history entry in front of the app at all times.
+// A back press consumes it -> popstate fires -> we navigate to the mapped parent
+// -> we push a fresh sentinel so the NEXT back press also fires. The app never exits.
+history.pushState({ff:1},'');           // sentinel #1 (in front of the page's own entry)
+window.addEventListener('popstate',function(){
+  UI.handleBack();                       // go to the mapped parent screen
+  history.pushState({ff:1},'');          // restore the sentinel for the next back press
 });
 
 // ============================================================
