@@ -1074,6 +1074,21 @@ const Engine={
   advanceDown(){gameState.down++;if(gameState.down>4)return'turnover';return'ok'},
   switchDef(pos){gameState.possession='defense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
   switchOff(pos){gameState.possession='offense';gameState.ballPos=pos;gameState.down=1;gameState.firstDownLine=this.nextFD(pos,gameState.fieldLength)},
+  // After a score, offer an onside to the scoring team if they're still trailing (2nd half only).
+  // scoringTeam: 'team' or 'opponent'. Sets gameState.onsideOffer to the trailing team's name, or false.
+  checkOnsideOffer(scoringTeam){
+    const qtr=gameState.quarter||1;
+    const isSecondHalf=(qtr===3||qtr===4)&&!gameState.overtime;
+    if(!isSecondHalf){gameState.onsideOffer=false;return;}
+    const teamName=localStorage.getItem('ff_team_name')||'Us';
+    if(scoringTeam==='team'&&currentGame.teamScore<currentGame.oppScore){
+      gameState.onsideOffer=teamName; // our team scored and still trails
+    }else if(scoringTeam==='opponent'&&currentGame.oppScore<currentGame.teamScore){
+      gameState.onsideOffer=currentGame.opponent; // opponent scored and still trails
+    }else{
+      gameState.onsideOffer=false;
+    }
+  },
   turnover(){
     // In OT, the other team gets the ball 1st & Goal at the 10 (not spot-based)
     if(gameState.overtime){
@@ -1135,18 +1150,15 @@ const GameUI={
     document.getElementById('g-yd').textContent=this.fmtYd();
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
     document.getElementById('g-sync').textContent=Cache.getStatus();
-    // Onside option: show in 2nd half (Q3/Q4, not OT) when EITHER team is trailing
+    // Onside option: ONLY right after the trailing team scores in the 2nd half (Q3/Q4, not OT).
+    // gameState.onsideOffer is set when a score happens with the scoring team trailing,
+    // and cleared once any play runs.
     const isSecondHalf=(qtr===3||qtr===4)&&!gameState.overtime;
-    const tied=currentGame.teamScore===currentGame.oppScore;
-    const showOnside=isSecondHalf&&!tied;
+    const showOnside=isSecondHalf&&!!gameState.onsideOffer;
     document.getElementById('onside-row').classList.toggle('hidden',!showOnside);
-    // Label the button for whichever team is trailing
     if(showOnside){
-      const weTrail=currentGame.teamScore<currentGame.oppScore;
-      const teamName=localStorage.getItem('ff_team_name')||'Us';
-      const trailingName=weTrail?teamName:currentGame.opponent;
       const btn=document.getElementById('onside-btn');
-      if(btn)btn.textContent=`🎯 Onside Kick — ${trailingName} (trailing) 4th & 20 from own 20`;
+      if(btn)btn.textContent=`🎯 Onside — ${gameState.onsideOffer} keep ball (4th & 20 from own 20)`;
     }
     const lel=document.getElementById('play-log-el');
     if(!gamePlays.length)lel.innerHTML='<div class="play-log-item">No plays yet</div>';
@@ -1477,6 +1489,8 @@ const Flow={
     const prevState=JSON.parse(JSON.stringify(gameState));
     const prevTeamScore=currentGame.teamScore;
     const prevOppScore=currentGame.oppScore;
+    // Any play clears a pending onside offer (it re-sets at the end if this play scores)
+    gameState.onsideOffer=false;
     const desc=this.buildDesc();let resultStr='';
 
     // APPLY ENGINE
@@ -1560,7 +1574,7 @@ const Flow={
         else if(c.result==='td'){resultStr='td'}
         if(resultStr!=='td')resultStr='possession'
       }else if(c.type==='fg'){
-        if(c.result==='good'){currentGame.teamScore+=3;Engine.switchDef(gameState.overtime?gameState.fieldLength-10:(r.afterScoreYd||14))}
+        if(c.result==='good'){currentGame.teamScore+=3;Engine.switchDef(gameState.overtime?gameState.fieldLength-10:(r.afterScoreYd||14));Engine.checkOnsideOffer('team')}
         else if(c.result==='wide'){
           // Wide or hit endzone = touchback
           Engine.switchDef(r.touchbackYd||14)
@@ -1607,7 +1621,7 @@ const Flow={
         resultStr=resultStr||'possession'
       }else if(c.type==='fgblock'){
         if(c.result==='blocked'){Engine.switchOff(Math.max(1,gameState.fieldLength-prevState.ballPos))}
-        else if(c.result==='good'){currentGame.oppScore+=3;Engine.switchOff(gameState.overtime?gameState.fieldLength-10:(r.afterScoreYd||14))}
+        else if(c.result==='good'){currentGame.oppScore+=3;Engine.switchOff(gameState.overtime?gameState.fieldLength-10:(r.afterScoreYd||14));Engine.checkOnsideOffer('opponent')}
         else if(c.result==='wide'){Engine.switchOff(gameState.overtime?gameState.fieldLength-10:(r.touchbackYd||14))}
         else if(c.result==='short'){
           // Short FG miss on defense — we can return it
@@ -2061,6 +2075,8 @@ const XP={
       const afterYd=currentSeason.rules.afterScoreYd||14;
       if(this.team==='team')Engine.switchDef(afterYd);else Engine.switchOff(afterYd);
     }
+    // Offer onside if the scoring team is still trailing (2nd half)
+    Engine.checkOnsideOffer(this.team);
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
     Cache.saveLocal();
     this._player=null;this._result=null;this._waitingForPlayer=false;
@@ -2089,19 +2105,20 @@ const GameActions={
     GameUI.refresh();Flow.restart()
   },
   onside(){
-    const weTrail=currentGame.teamScore<currentGame.oppScore;
     const teamName=localStorage.getItem('ff_team_name')||'Us';
-    const trailingName=weTrail?teamName:currentGame.opponent;
-    if(!confirm(`Onside kick for ${trailingName} (trailing)? They get the ball 4th & 20 at their own 20 — one play to gain 20+ yards.`))return;
-    // The trailing team gets the ball at their own 20, 4th down, need 20 (FD line at 40)
-    if(weTrail){
+    const weTrail=currentGame.teamScore<currentGame.oppScore;
+    const trailingName=gameState.onsideOffer||(weTrail?teamName:currentGame.opponent);
+    if(!confirm(`Onside — ${trailingName} keeps the ball? They get 4th & 20 at their own 20 — one play to gain 20+ yards.`))return;
+    // The trailing team keeps/gets the ball at their own 20, 4th down, need 20 (FD line at 40)
+    if(trailingName===teamName){
       gameState.possession='offense';  // our ball
     }else{
-      gameState.possession='defense';  // opponent's ball (they're on offense from our defense view)
+      gameState.possession='defense';  // opponent's ball
     }
     gameState.ballPos=20;
     gameState.down=4;
     gameState.firstDownLine=40;
+    gameState.onsideOffer=false; // used it — clear the offer
     const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'onside',result:'onside',players:{},yards:0,downBefore:4,ballPosBefore:20,description:`🎯 ONSIDE KICK — ${trailingName} 4th & 20 from own 20`,quarter:gameState.quarter||1};
     gamePlays.push(play);
     API.post(`/games/${currentGame.id}/plays`,play).catch(()=>Cache.queuePlay(play));
