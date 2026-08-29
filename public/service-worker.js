@@ -2,7 +2,7 @@
 // Caches the app shell so it installs and loads offline.
 // Network-first for navigation/pages so updates and API calls always work.
 
-const CACHE = 'ff-tracker-v2';
+const CACHE = 'ff-tracker-v3';
 // Do NOT cache manifest.json — it must stay fresh so the install name/icon update.
 const SHELL = [
   './',

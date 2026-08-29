@@ -514,44 +514,33 @@ window.addEventListener('online',()=>{
 // ============================================================
 const UI={
   current:'screen-auth',
-  // Explicit back destination for each screen (simple known hierarchy).
-  // 'logout' = confirm logout; null = do nothing (login screen).
-  backMap:{
-    'screen-auth':null,
-    'screen-home':'logout',
-    'screen-seasons':'screen-home',
-    'screen-create-season':'screen-home',
-    'screen-dash':'screen-seasons',
-    'screen-players':'screen-dash',
-    'screen-rules':'screen-dash',
-    'screen-new-game':'screen-dash',
-    'screen-history':'screen-dash',
-    'screen-summary':'screen-history',
-    'screen-game':'screen-home',
-    'screen-import':'screen-home'
-  },
   show(id){
     // Pure screen switch. Nothing to do with browser history.
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
   },
-  // Where should BACK go from the current screen?  Simple, explicit.
+  // Browser/hardware BACK does exactly what the on-screen "← Back" link does for each screen.
   handleBack(){
-    // Live game: go Home (review / resume)
+    // Live game → always go Home (review / resume)
     if(typeof isGameActive==='function'&&isGameActive()){
       const teamName=localStorage.getItem('ff_team_name')||'';
-      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
-      else this.show('screen-home');
+      Auth.onLoggedIn(teamName);
       return;
     }
-    const dest=this.backMap[this.current];
-    if(dest==='logout'){
-      if(confirm('Log out of the app?'))Auth.logout();
-    }else if(dest){
-      this.show(dest);
+    switch(this.current){
+      case 'screen-summary':      Games.loadHistory(); break;      // → Game History
+      case 'screen-history':      Seasons.showDash();  break;      // → Season Dashboard
+      case 'screen-players':      Seasons.showDash();  break;      // → Season Dashboard
+      case 'screen-rules':        Seasons.showDash();  break;      // → Season Dashboard
+      case 'screen-new-game':     Seasons.showDash();  break;      // → Season Dashboard
+      case 'screen-game':         { Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); break; } // → Home
+      case 'screen-dash':         Seasons.loadList();  break;      // → Seasons list
+      case 'screen-create-season':Seasons.loadList();  break;      // → Seasons list
+      case 'screen-seasons':      Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); break; // → Home
+      case 'screen-home':         if(confirm('Log out of the app?'))Auth.logout(); break;
+      default: /* auth screen — stay put */ break;
     }
-    // null → stay put (login screen)
   },
   showError(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000)}
 };
