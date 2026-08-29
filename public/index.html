@@ -530,28 +530,26 @@ const UI={
     'screen-game':'screen-home',
     'screen-import':'screen-home'
   },
-  show(id,fromBack){
+  show(id){
+    // Pure screen switch — no history manipulation here.
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
-    // Arm the hardware back-button trap for forward navigations only.
-    // Back navigations must NOT add a new history entry (the popstate handler already re-armed one).
-    if(!fromBack){ try{history.pushState({ff:true},'');}catch(e){} }
   },
   // Handle a back request based on the current screen's mapped destination.
   handleBack(){
     // Live game: always go to Home (review / resume) regardless of map
     if(typeof isGameActive==='function'&&isGameActive()){
       const teamName=localStorage.getItem('ff_team_name')||'';
-      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName,true);
-      else this.show('screen-home',true);
+      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
+      else this.show('screen-home');
       return;
     }
     const dest=this.backMap[this.current];
     if(dest==='logout'){
       if(confirm('Log out of the app?'))Auth.logout();
     }else if(dest){
-      this.show(dest,true); // back navigation — don't arm a new trap
+      this.show(dest);
     }
     // null → stay put (login screen)
   },
@@ -587,14 +585,14 @@ const Auth={
       Auth.onLoggedIn(data.teamName);
     }catch(e){UI.showError('auth-error',e.message)}
   },
-  onLoggedIn(teamName,fromBack){
+  onLoggedIn(teamName){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
     // Check server for any in-progress game, fall back to cache only if offline
     const cacheCard=document.getElementById('resume-cache-card');
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
     Auth.checkActiveGame(teamName);
-    UI.show('screen-home',fromBack);
+    UI.show('screen-home');
   },
   async checkActiveGame(teamName){
     const cacheCard=document.getElementById('resume-cache-card');
@@ -2552,13 +2550,17 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // Hardware/browser BACK button handling.
-// Each UI.show() pushes one history entry; on back we re-arm the trap and route
-// to the current screen's explicit back destination (see UI.backMap).
-try{history.pushState({ff:true},'');}catch(e){} // initial trap
+// Model: keep exactly ONE dummy history entry (the "trap") in front of us at all times.
+// A back press consumes it and fires popstate; we do our navigation, then re-arm ONE
+// trap on the next tick (setTimeout) so Chrome registers it as a distinct entry.
+function armBackTrap(){ try{history.pushState({ff:true},'');}catch(e){} }
+// Arm two entries up front: a base + a trap, so the first back has something to consume.
+armBackTrap();
 window.addEventListener('popstate',function(e){
-  // Re-arm immediately so the next back press also fires (never exits the app early)
-  try{history.pushState({ff:true},'');}catch(err){}
+  // Do the in-app navigation first
   UI.handleBack();
+  // Re-arm the single trap on the next tick (synchronous re-arm gets dropped on some Androids)
+  setTimeout(armBackTrap,0);
 });
 
 // ============================================================
