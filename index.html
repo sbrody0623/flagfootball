@@ -513,29 +513,46 @@ window.addEventListener('online',()=>{
 // UI
 // ============================================================
 const UI={
-  navStack:[],
   current:'screen-auth',
-  show(id,fromBack){
+  // Explicit back destination for each screen (simple known hierarchy).
+  // 'logout' = confirm logout; null = do nothing (login screen).
+  backMap:{
+    'screen-auth':null,
+    'screen-home':'logout',
+    'screen-seasons':'screen-home',
+    'screen-create-season':'screen-home',
+    'screen-dash':'screen-home',
+    'screen-players':'screen-dash',
+    'screen-rules':'screen-dash',
+    'screen-new-game':'screen-dash',
+    'screen-history':'screen-dash',
+    'screen-summary':'screen-history',
+    'screen-game':'screen-home',
+    'screen-import':'screen-home'
+  },
+  show(id){
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
-    if(id==='screen-home'||id==='screen-auth'){
-      // Roots — clear the back history
-      this.navStack=[];
-    }else if(!fromBack){
-      // Record where we came from so back can return there
-      if(this.current&&this.current!==id)this.navStack.push(this.current);
-      if(this.navStack.length>50)this.navStack.shift();
-    }
     this.current=id;
-    // Re-arm the hardware back-button trap for THIS navigation (not on back actions)
-    if(!fromBack){ try{history.pushState({ff:true},'');}catch(e){} }
+    // Re-arm the hardware back-button trap for this navigation
+    try{history.pushState({ff:true},'');}catch(e){}
   },
-  // Go back one screen. Returns false if there's nowhere to go.
-  goBack(){
-    if(this.navStack.length===0)return false;
-    const prev=this.navStack.pop();
-    this.show(prev,true);
-    return true;
+  // Handle a back request based on the current screen's mapped destination.
+  handleBack(){
+    // Live game: always go to Home (review / resume) regardless of map
+    if(typeof isGameActive==='function'&&isGameActive()){
+      const teamName=localStorage.getItem('ff_team_name')||'';
+      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
+      else this.show('screen-home');
+      return;
+    }
+    const dest=this.backMap[this.current];
+    if(dest==='logout'){
+      if(confirm('Log out of the app?'))Auth.logout();
+    }else if(dest){
+      this.show(dest);
+    }
+    // null → stay put (login screen)
   },
   showError(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000)}
 };
@@ -576,7 +593,6 @@ const Auth={
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
     Auth.checkActiveGame(teamName);
-    UI.navStack=[]; // home is the root — clear back history
     UI.show('screen-home');
   },
   async checkActiveGame(teamName){
@@ -610,7 +626,6 @@ const Auth={
   async logout(){
     try{await API.post('/logout')}catch(e){}
     API.token=null;localStorage.removeItem('ff_token');localStorage.removeItem('ff_team_name');
-    UI.navStack=[];
     UI.show('screen-auth');
   },
   async check(){
@@ -2536,29 +2551,13 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // Hardware/browser BACK button handling.
-// Each UI.show() pushes one history entry, so every page you open is one "back".
-// On popstate we handle the back ourselves, then re-arm a trap so the NEXT back is caught too.
-try{history.pushState({ff:true},'');}catch(e){} // initial safety trap
+// Each UI.show() pushes one history entry; on back we re-arm the trap and route
+// to the current screen's explicit back destination (see UI.backMap).
+try{history.pushState({ff:true},'');}catch(e){} // initial trap
 window.addEventListener('popstate',function(e){
-  // Re-arm immediately so a subsequent back press keeps firing popstate (never exits the app)
+  // Re-arm immediately so the next back press also fires (never exits the app early)
   try{history.pushState({ff:true},'');}catch(err){}
-
-  if(isGameActive()){
-    // Live game → go to Home where the Resume button appears
-    const teamName=localStorage.getItem('ff_team_name')||'';
-    if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
-    else UI.show('screen-home');
-    return;
-  }
-
-  // Walk back one screen through our own nav stack
-  if(UI.goBack())return;
-
-  // Nothing left to go back to:
-  if(UI.current==='screen-home'){
-    if(confirm('Log out of the app?'))Auth.logout();
-  }
-  // (auth screen or empty — stay put; app never closes)
+  UI.handleBack();
 });
 
 // ============================================================
