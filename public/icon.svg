@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Rounded black tile with red border -->
+  <rect x="14" y="14" width="484" height="484" rx="95" ry="95" fill="#0a0a0a" stroke="#e01e26" stroke-width="20"/>
+
+  <!-- Red flag / ribbon sweeping down to the lower-left from behind the ball -->
+  <path d="M110 415
+           C 180 360, 250 380, 315 315
+           C 300 360, 285 385, 260 430
+           C 235 400, 200 402, 180 440
+           C 175 418, 150 408, 110 415 Z"
+        fill="#e01e26"/>
+  <path d="M330 300
+           C 400 292, 445 322, 480 292
+           C 452 342, 395 356, 335 340 Z"
+        fill="#e01e26"/>
+
+  <!-- Football body (tilted up to the right), white with black outline -->
+  <g transform="rotate(-30 285 265)">
+    <ellipse cx="285" cy="265" rx="158" ry="86" fill="#ffffff" stroke="#0a0a0a" stroke-width="16"/>
+    <!-- Center seam -->
+    <line x1="150" y1="265" x2="420" y2="265" stroke="#0a0a0a" stroke-width="13" stroke-linecap="round"/>
+    <!-- Laces -->
+    <g stroke="#0a0a0a" stroke-width="12" stroke-linecap="round">
+      <line x1="248" y1="245" x2="248" y2="285"/>
+      <line x1="276" y1="243" x2="276" y2="287"/>
+      <line x1="304" y1="243" x2="304" y2="287"/>
+      <line x1="332" y1="245" x2="332" y2="285"/>
+    </g>
+  </g>
+</svg>
