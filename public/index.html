@@ -521,7 +521,7 @@ const UI={
     'screen-home':'logout',
     'screen-seasons':'screen-home',
     'screen-create-season':'screen-home',
-    'screen-dash':'screen-home',
+    'screen-dash':'screen-seasons',
     'screen-players':'screen-dash',
     'screen-rules':'screen-dash',
     'screen-new-game':'screen-dash',
@@ -530,11 +530,14 @@ const UI={
     'screen-game':'screen-home',
     'screen-import':'screen-home'
   },
+  _suppressPush:false,
   show(id){
-    // Pure screen switch — no history manipulation here.
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
+    // Push a history entry for each forward navigation so the hardware back button
+    // always has something to pop. Suppressed while handling a back press.
+    if(!this._suppressPush){ try{history.pushState({ffScreen:id},'');}catch(e){} }
   },
   // Handle a back request based on the current screen's mapped destination.
   handleBack(){
@@ -2550,17 +2553,17 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // Hardware/browser BACK button handling.
-// Model: keep exactly ONE dummy history entry (the "trap") in front of us at all times.
-// A back press consumes it and fires popstate; we do our navigation, then re-arm ONE
-// trap on the next tick (setTimeout) so Chrome registers it as a distinct entry.
-function armBackTrap(){ try{history.pushState({ff:true},'');}catch(e){} }
-// Arm two entries up front: a base + a trap, so the first back has something to consume.
-armBackTrap();
+// UI.show() pushes a real history entry per forward navigation, so the OS back button
+// has genuine depth. On popstate (a back press) we route to the current screen's mapped
+// parent WITHOUT pushing a new forward entry, then keep one buffer entry so we never
+// run out and accidentally exit the app.
+try{history.pushState({ffScreen:'base'},'');}catch(e){} // base buffer entry
 window.addEventListener('popstate',function(e){
-  // Do the in-app navigation first
+  UI._suppressPush=true;
   UI.handleBack();
-  // Re-arm the single trap on the next tick (synchronous re-arm gets dropped on some Androids)
-  setTimeout(armBackTrap,0);
+  UI._suppressPush=false;
+  // Keep a buffer entry ahead so the next hardware back still fires popstate
+  try{history.pushState({ffScreen:UI.current},'');}catch(err){}
 });
 
 // ============================================================
