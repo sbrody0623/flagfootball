@@ -1378,8 +1378,24 @@ const Flow={
     // FG short returned: this is the return yards
     if((c.type==='fg'||c.type==='fgblock')&&c._fgShortResult==='return'&&!c._fgRetYds){c._fgRetYds=val;this.showConfirm();return}
     // Penalty yards
-    if(c.result==='penalty'||c.type==='penalty'){c._penaltyYds=val;c.yards=val;this.showConfirm();return}
+    if(c.result==='penalty'||c.type==='penalty'){
+      c._penaltyYds=val;c.yards=val;
+      // Defensive penalty (starts with D) — ask if it's an automatic first down
+      const pen=c._penalty||'';
+      if(pen.startsWith('D')){
+        document.getElementById('result-label').textContent='Automatic first down?';
+        document.getElementById('result-btns').innerHTML=`<button class="play-btn" style="background:#e8f5e9;color:#2e7d32" onclick="Flow.setAutoFD(true)">✅ Yes — Auto 1st Down</button><button class="play-btn" onclick="Flow.setAutoFD(false)">No — replay down</button>`;
+        document.getElementById('step-result').classList.remove('hidden');
+        return;
+      }
+      this.showConfirm();return;
+    }
     c.yards=val;this.showConfirm()
+  },
+  setAutoFD(v){
+    this.current._autoFirstDown=v;
+    document.getElementById('step-result').classList.add('hidden');
+    this.showConfirm();
   },
 
   pickFGShortResult(r){
@@ -1506,6 +1522,7 @@ const Flow={
       }else{
         d=`🚩 ${pen} ${penYds}yds (from LOS)`;
       }
+      if(c._autoFirstDown)d+=' + Auto 1st Down';
       return d;
     }
     if(gameState.possession==='offense'){
@@ -1558,22 +1575,26 @@ const Flow={
         }
       }
 
-      // Recalculate first down line if we crossed it
-      if(gameState.ballPos>=gameState.firstDownLine){
+      // Automatic first down (defensive penalty flagged as auto 1st down)
+      if(c._autoFirstDown){
+        gameState.down=1;
+        gameState.firstDownLine=Engine.nextFD(gameState.ballPos,gameState.fieldLength);
+      }else if(gameState.ballPos>=gameState.firstDownLine){
+        // Crossed the marker → first down anyway
         gameState.down=1;
         gameState.firstDownLine=Engine.nextFD(gameState.ballPos,gameState.fieldLength);
       }
-      // Also check if D penalty gives auto first down (ball past first down marker)
-      // Don't advance down on penalties — replay the down
+      // Otherwise: replay the down (no down advance on a penalty)
 
       // Calculate net yards for description
       const netYds=gameState.ballPos-prevState.ballPos;
       const netDesc=netYds>=0?`+${netYds}yds`:`${netYds}yds`;
+      const afdDesc=c._autoFirstDown?' + Auto 1st Down':'';
 
       // Save and exit
       const penPlayers=Object.assign({},c.players||{});
       penPlayers._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
-      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc})`,quarter:gameState.quarter||1,penalty:pen};
+      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:desc+` (net ${netDesc}${afdDesc})`,quarter:gameState.quarter||1,penalty:pen};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
       try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
