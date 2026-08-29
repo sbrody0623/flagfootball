@@ -530,27 +530,28 @@ const UI={
     'screen-game':'screen-home',
     'screen-import':'screen-home'
   },
-  show(id){
+  show(id,fromBack){
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
-    // Re-arm the hardware back-button trap for this navigation
-    try{history.pushState({ff:true},'');}catch(e){}
+    // Arm the hardware back-button trap for forward navigations only.
+    // Back navigations must NOT add a new history entry (the popstate handler already re-armed one).
+    if(!fromBack){ try{history.pushState({ff:true},'');}catch(e){} }
   },
   // Handle a back request based on the current screen's mapped destination.
   handleBack(){
     // Live game: always go to Home (review / resume) regardless of map
     if(typeof isGameActive==='function'&&isGameActive()){
       const teamName=localStorage.getItem('ff_team_name')||'';
-      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName);
-      else this.show('screen-home');
+      if(typeof Auth!=='undefined'&&Auth.onLoggedIn)Auth.onLoggedIn(teamName,true);
+      else this.show('screen-home',true);
       return;
     }
     const dest=this.backMap[this.current];
     if(dest==='logout'){
       if(confirm('Log out of the app?'))Auth.logout();
     }else if(dest){
-      this.show(dest);
+      this.show(dest,true); // back navigation — don't arm a new trap
     }
     // null → stay put (login screen)
   },
@@ -586,14 +587,14 @@ const Auth={
       Auth.onLoggedIn(data.teamName);
     }catch(e){UI.showError('auth-error',e.message)}
   },
-  onLoggedIn(teamName){
+  onLoggedIn(teamName,fromBack){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
     // Check server for any in-progress game, fall back to cache only if offline
     const cacheCard=document.getElementById('resume-cache-card');
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
     Auth.checkActiveGame(teamName);
-    UI.show('screen-home');
+    UI.show('screen-home',fromBack);
   },
   async checkActiveGame(teamName){
     const cacheCard=document.getElementById('resume-cache-card');
