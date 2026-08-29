@@ -346,7 +346,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <!-- Controls -->
   <div class="card" id="game-ctrls">
     <div class="action-row">
-      <button class="btn btn-warning btn-sm" onclick="GameActions.manualSwitch()">🔄 Switch</button>
+      <button class="btn btn-warning btn-sm hidden" id="switch-btn" onclick="GameActions.manualSwitch()">🔄 Switch</button>
       <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32" onclick="GameActions.endQuarter()">🔔 End Qtr</button>
       <button class="btn btn-secondary btn-sm" onclick="GameActions.undo()">↩️ Undo</button>
       <button class="btn btn-sm" style="background:#e3f2fd;color:#1565c0" onclick="GameActions.toggleLog()">📝 Log</button>
@@ -775,7 +775,7 @@ const Games={
     const fl=parseInt(document.querySelector('[name="rg-fl"]:checked').value);
     const st=document.querySelector('[name="rg-st"]:checked').value;
     const r=currentSeason.rules;
-    const state={possession:st,startSide:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2,quarter:1};
+    const state={possession:st,startSide:st,ballPos:r.afterScoreYd||14,down:1,firstDownLine:Engine.nextFD(r.afterScoreYd||14,fl),fieldLength:fl,mid:fl/2,quarter:1,halfStart:true};
     try{
       const res=await API.post(`/seasons/${currentSeason.id}/games`,{opponent:opp,homeAway:ha,fieldLength:fl,gameState:state});
       currentGame={id:res.id,opponent:opp,homeAway:ha,fieldLength:fl,teamScore:0,oppScore:0,completed:false};
@@ -1187,9 +1187,10 @@ const GameUI={
     document.getElementById('g-yd').textContent=this.fmtYd();
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
     document.getElementById('g-sync').textContent=Cache.getStatus();
+    // Switch button: only on the first play of Q1, the first play of Q3 (2nd half), or in overtime.
+    const canSwitch=(!!gameState.halfStart)||(!!gameState.overtime);
+    document.getElementById('switch-btn').classList.toggle('hidden',!canSwitch);
     // Onside option: ONLY right after the trailing team scores in the 2nd half (Q3/Q4, not OT).
-    // gameState.onsideOffer is set when a score happens with the scoring team trailing,
-    // and cleared once any play runs.
     const isSecondHalf=(qtr===3||qtr===4)&&!gameState.overtime;
     const showOnside=isSecondHalf&&!!gameState.onsideOffer;
     document.getElementById('onside-row').classList.toggle('hidden',!showOnside);
@@ -1528,6 +1529,8 @@ const Flow={
     const prevOppScore=currentGame.oppScore;
     // Any play clears a pending onside offer (it re-sets at the end if this play scores)
     gameState.onsideOffer=false;
+    // Once a play runs, the half/OT-start switch window closes
+    gameState.halfStart=false;
     const desc=this.buildDesc();let resultStr='';
 
     // APPLY ENGINE
@@ -2209,6 +2212,7 @@ const GameActions={
       // Opposite of who started Q1
       const secondHalfSide=(startSide==='offense')?'defense':'offense';
       if(secondHalfSide==='offense')Engine.switchOff(startYd);else Engine.switchDef(startYd);
+      gameState.halfStart=true; // allow Switch at the 2nd-half kickoff
       try{await API.put(`/games/${currentGame.id}`,{gameState})}catch(e){}
       Cache.saveLocal();
       GameUI.refresh();Flow.restart();
