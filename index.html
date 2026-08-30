@@ -3168,12 +3168,14 @@ window.addEventListener('popstate', function(ev){
   // --- Live game guard: leaving requires confirmation ---
   if(UI.current==='screen-game' && isGameActive()){
     if(!confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
-      try{ history.pushState({screen:'screen-game'},''); }catch(e){}   // stay
+      // Stay in the game. Re-assert a [root, screen-game] pair from wherever the
+      // pointer landed, so a repeated back press keeps re-asking (never escapes).
+      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-game'},''); }catch(e){}
       return;
     }
+    // Leaving -> go Home and anchor a fresh [root, screen-home] pair.
     UI.restore('screen-home');
-    // re-anchor so home has an entry beneath it again
-    try{ history.pushState({screen:'screen-home'},''); }catch(e){}
+    try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-home'},''); }catch(e){}
     return;
   }
 
@@ -3190,10 +3192,21 @@ window.addEventListener('popstate', function(ev){
       Admin.exit();
       return;
     }
-    // Anywhere else (normally Home) -> offer logout, and PIN the pointer so the
-    // app never falls out from under us regardless of the user's choice.
-    try{ history.pushState({screen:UI.current},''); }catch(e){}
-    if(confirm('Log out of the app?')){ Auth.logout(); }
+    // Anywhere else (normally Home) -> offer logout.
+    // The pointer is currently ON the root entry. Whatever the user chooses, we
+    // must leave a fresh [root, stay] pair so the NEXT back press hits this same
+    // branch again (instead of escaping the app). The previous version pushed a
+    // single entry BEFORE the confirm, which left the stack one short after a
+    // Cancel — so the 2nd back press fell through and closed the app.
+    var stay=(UI.current && UI.current!=='__root__') ? UI.current : 'screen-home';
+    var logout=confirm('Log out of the app?');
+    if(logout){ Auth.logout(); return; }
+    // Cancelled — rebuild the anchor. We're sitting on the root entry now:
+    // replace it as root, then push `stay` so we're back one level above root.
+    try{
+      history.replaceState({screen:'__root__'},'');
+      history.pushState({screen:stay},'');
+    }catch(e){}
     return;
   }
 
