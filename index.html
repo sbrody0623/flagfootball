@@ -122,6 +122,10 @@ h3{font-size:1rem;margin-bottom:6px}
         <span style="font-size:0.85rem;color:var(--muted)">New team? </span>
         <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showRegister()">Create Account</span>
       </div>
+      <div style="text-align:center;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        <p style="font-size:0.8rem;color:var(--muted);margin:0 0 8px">Forgot your password or can't log in?</p>
+        <button class="btn btn-secondary btn-sm" onclick="Auth.emailAdmin()">📧 Email Admin for Help</button>
+      </div>
     </div>
     <div id="auth-register" class="hidden">
       <h3>Create Team Account</h3>
@@ -624,8 +628,22 @@ const UI={
 // AUTH
 // ============================================================
 const Auth={
+  // Admin contact address. Change this to your email if it ever moves.
+  ADMIN_EMAIL:'brodyfootball2024@gmail.com',
   showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden')},
   showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
+  // Open the user's email app with a pre-filled message to the admin. Uses a
+  // mailto: link so it works on any device with no server/SMTP setup.
+  emailAdmin(){
+    const subject=encodeURIComponent('Flag Stats — Login help needed');
+    const body=encodeURIComponent(
+      "Hi,\n\nI'm having trouble logging in to Flag Stats and need help.\n\n"+
+      "My team code (if I remember it): \n"+
+      "What I need help with (e.g. password reset): \n\n"+
+      "Thanks!"
+    );
+    window.location.href=`mailto:${this.ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+  },
   async login(){
     const code=document.getElementById('login-code').value.trim();
     const pass=document.getElementById('login-pass').value;
