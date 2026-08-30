@@ -1340,8 +1340,83 @@ const Games={
           <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(3)">Q3</button>
           <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(4)">Q4</button>
         </div><div id="stats-container">${statsHtml}</div></div>
-        <div class="card"><h3>Play-by-Play</h3><div class="play-log">${plays.map((p,i)=>`<div class="play-log-item"><strong>#${i+1}</strong>${p.quarter?' <span style="color:var(--muted)">[Q${p.quarter}]</span>':''} ${p.description}</div>`).join('')||'<div class="play-log-item">No plays</div>'}</div></div>`;
+        <div class="card"><h3>Play-by-Play</h3><p style="font-size:0.78rem;color:var(--muted);margin:0 0 8px">Tap ✏️ on a play to fix a jersey number.</p><div class="play-log">${plays.map((p,i)=>PlayEdit.renderItem(p,i)).join('')||'<div class="play-log-item">No plays</div>'}</div></div>`;
     }catch(e){alert(e.message)}
+  }
+};
+
+// ============================================================
+// PLAY EDIT (correct jersey numbers on a recorded play, from the summary)
+// ============================================================
+const PlayEdit={
+  // Jersey-role keys that may appear in a play's players object, with friendly labels.
+  ROLES:{qb:'QB',receiver:'Receiver',carrier:'Runner',punter:'Punter',kicker:'Kicker',
+    flagPuller:'Flag Puller',defender:'Defender',interceptor:'Interceptor',returner:'Returner',blocker:'Blocker'},
+  // Render one play-by-play row (index i into window._summaryPlays).
+  renderItem(p,i){
+    const q=p.quarter?` <span style="color:var(--muted)">[Q${p.quarter}]</span>`:'';
+    const canEdit=this._roleKeys(p).length>0;
+    const editBtn=canEdit?` <span style="cursor:pointer" title="Edit jersey numbers" onclick="PlayEdit.open(${i})">✏️</span>`:'';
+    return `<div class="play-log-item" id="pbp-${i}"><strong>#${i+1}</strong>${q} ${p.description||''}${editBtn}</div>`;
+  },
+  // Which jersey-role keys are actually present (and numeric) on this play.
+  _roleKeys(p){
+    const pl=p.players||{};
+    return Object.keys(this.ROLES).filter(k=>pl[k]!==undefined&&pl[k]!==null&&pl[k]!=='');
+  },
+  // Show inline editor for play i.
+  open(i){
+    const plays=window._summaryPlays||[];
+    const p=plays[i]; if(!p)return;
+    const keys=this._roleKeys(p);
+    const pl=p.players||{};
+    const rows=keys.map(k=>`<div class="form-row" style="align-items:center;gap:8px;margin-bottom:6px">
+        <label style="min-width:90px;font-size:0.85rem">${this.ROLES[k]}</label>
+        <input type="number" id="pe-${i}-${k}" value="${pl[k]}" min="0" max="99" style="width:80px;padding:6px;border:1px solid var(--border);border-radius:var(--radius)">
+      </div>`).join('');
+    const el=document.getElementById('pbp-'+i);
+    el.innerHTML=`<div><strong>#${i+1}</strong> <span style="color:var(--muted);font-size:0.82rem">${p.description||''}</span></div>
+      <div style="margin-top:8px">${rows}
+        <button class="btn btn-success btn-sm" onclick="PlayEdit.save(${i})">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="PlayEdit.cancel(${i})">Cancel</button>
+      </div>`;
+  },
+  cancel(i){
+    const plays=window._summaryPlays||[];
+    const el=document.getElementById('pbp-'+i);
+    if(el&&plays[i])el.outerHTML=this.renderItem(plays[i],i);
+  },
+  async save(i){
+    const plays=window._summaryPlays||[];
+    const g=window._summaryGame;
+    const p=plays[i]; if(!p||!g)return;
+    const keys=this._roleKeys(p);
+    const oldPlayers=p.players||{};
+    const changed={};           // role -> new number (only the ones that changed)
+    let desc=p.description||'';
+    for(const k of keys){
+      const inp=document.getElementById(`pe-${i}-${k}`);
+      if(!inp)continue;
+      const nv=inp.value.trim();
+      if(nv===''){alert('Jersey number cannot be blank.');return}
+      const ov=String(oldPlayers[k]);
+      if(nv!==ov){
+        changed[k]=nv;
+        // Keep the human-readable description in sync: swap #OLD -> #NEW.
+        desc=desc.split('#'+ov).join('#'+nv);
+      }
+    }
+    if(Object.keys(changed).length===0){this.cancel(i);return}
+    try{
+      await API.put(`/games/${g.id}/plays/${p.id}`,{players:changed,description:desc});
+      // Reflect locally so stats + log update without a reload.
+      p.players=Object.assign({},oldPlayers,changed);
+      p.description=desc;
+      // Refresh the stats panel (respect the current quarter filter if any).
+      const sc=document.getElementById('stats-container');
+      if(sc)sc.innerHTML=Stats.buildGameStats(window._summaryPlays);
+      this.cancel(i);
+    }catch(e){alert('Could not save: '+(e.message||'error'))}
   }
 };
 

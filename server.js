@@ -631,6 +631,31 @@ app.delete('/api/games/:gid/plays/last', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Update a single play's jersey numbers (and its display description). Only the
+// role keys sent in `players` are changed; app-managed keys inside the stored
+// players JSON (_stateBefore, _quarter, _clientUid, _retYds, _intRetYds) are
+// preserved. Play type / result / yards are intentionally NOT editable here,
+// since those drive the game engine and would require re-simulating the game.
+app.put('/api/games/:gid/plays/:pid', authenticate, async (req, res) => {
+  try {
+    const { players, description } = req.body || {};
+    const check = await supaGet('games', `id=eq.${req.params.gid}&select=id,season_id`);
+    if (!check || check.length === 0) return res.status(404).json({ error: 'Game not found' });
+    const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
+    if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
+
+    const rows = await supaGet('plays', `id=eq.${req.params.pid}&game_id=eq.${req.params.gid}&select=id,players`);
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Play not found' });
+
+    // Merge only the provided role keys onto the existing blob (keeps _* keys).
+    const merged = Object.assign({}, rows[0].players || {}, players || {});
+    const updates = { players: merged };
+    if (typeof description === 'string') updates.description = description;
+    await supaUpdate('plays', `id=eq.${req.params.pid}`, updates);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================================
 // CATCH-ALL: Serve frontend
 // ============================================================
