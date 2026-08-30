@@ -99,6 +99,15 @@ create table if not exists plays (
   description    text default '',
   created_at     timestamptz default now()
 );
+
+create table if not exists contact_messages (
+  id         bigserial primary key,
+  name       text,
+  email      text,
+  message    text not null,
+  handled    boolean default false,
+  created_at timestamptz default now()
+);
 ```
 
 > The `plays.players` JSONB column also carries a few app-managed keys — the quarter (`_quarter`), a sync-dedupe id (`_clientUid`), return yards, and an undo snapshot — so no schema migration is needed to change those.
@@ -163,6 +172,11 @@ If `ADMIN_KEY` is not set, the admin panel is fully disabled and all admin endpo
 3. From there you can, for each team:
    - **🔑 Reset Password** — type a new password; it's saved (bcrypt-hashed) and the team's existing logins are signed out. Give the new password to the team.
    - **🗑️ Delete Team** — permanently removes the team and all of its seasons, games, and stats (you must type the team name to confirm).
+4. The **📨 Messages** tab shows help/contact requests submitted from the login screen (see below), with the sender's name, email (as a `mailto:` link for replying), and message. Delete each once handled.
+
+### Contact form
+
+The login screen has a **contact form** (name, email, message) for anyone who is locked out or needs help. Submitting it stores the message in the `contact_messages` table — no email service required. Read incoming requests in the admin panel's **Messages** tab.
 
 The panel never exposes password hashes, and the admin key is compared with a timing-safe check and never sent back to the browser. Rotate the key anytime by changing the Render variable.
 

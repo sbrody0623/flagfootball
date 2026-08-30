@@ -122,9 +122,15 @@ h3{font-size:1rem;margin-bottom:6px}
         <span style="font-size:0.85rem;color:var(--muted)">New team? </span>
         <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showRegister()">Create Account</span>
       </div>
-      <div style="text-align:center;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-        <p style="font-size:0.8rem;color:var(--muted);margin:0 0 8px">Forgot your password or can't log in?</p>
-        <button class="btn btn-secondary btn-sm" onclick="Auth.emailAdmin()">📧 Email Admin for Help</button>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        <p style="font-size:0.8rem;color:var(--muted);margin:0 0 8px;text-align:center">Forgot your password or can't log in?</p>
+        <div id="contact-form">
+          <div class="form-group"><label>Your Name</label><input type="text" id="contact-name" placeholder="Name"></div>
+          <div class="form-group"><label>Your Email</label><input type="email" id="contact-email" placeholder="you@example.com" autocapitalize="none"></div>
+          <div class="form-group"><label>Message</label><textarea id="contact-message" placeholder="Describe what you need (e.g. password reset for team code ...)" style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;font-family:inherit"></textarea></div>
+          <button class="btn btn-secondary" onclick="Contact.send()">📧 Send Message to Admin</button>
+        </div>
+        <div id="contact-sent" class="hidden" style="text-align:center;color:#2e7d32;font-size:0.9rem;padding:8px">✅ Message sent! The admin will get back to you.</div>
       </div>
     </div>
     <div id="auth-register" class="hidden">
@@ -400,10 +406,12 @@ h3{font-size:1rem;margin-bottom:6px}
       <span class="logout-btn" onclick="Admin.logout()">Lock</span>
     </div>
     <div class="card">
-      <button class="btn btn-secondary btn-sm" onclick="Admin.loadTeams()">🔄 Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="Admin.showTeams()">👥 Teams</button>
+      <button class="btn btn-secondary btn-sm" onclick="Admin.showMessages()">📨 Messages</button>
       <span style="font-size:0.85rem;color:var(--muted);margin-left:8px" id="admin-count"></span>
     </div>
     <div id="admin-teams-el"></div>
+    <div id="admin-messages-el" class="hidden"></div>
   </div>
 </div>
 
@@ -614,8 +622,19 @@ const Admin={
       Admin.token=data.token;
       document.getElementById('admin-login').classList.add('hidden');
       document.getElementById('admin-panel').classList.remove('hidden');
-      Admin.loadTeams();
+      Admin.showTeams();
     }catch(e){UI.showError('admin-error',e.message)}
+  },
+  // Toggle between the Teams and Messages views.
+  showTeams(){
+    document.getElementById('admin-teams-el').classList.remove('hidden');
+    document.getElementById('admin-messages-el').classList.add('hidden');
+    Admin.loadTeams();
+  },
+  showMessages(){
+    document.getElementById('admin-teams-el').classList.add('hidden');
+    document.getElementById('admin-messages-el').classList.remove('hidden');
+    Admin.loadMessages();
   },
   async logout(){
     try{await Admin.req('POST','/admin/logout')}catch(e){}
@@ -663,6 +682,37 @@ const Admin={
       await Admin.req('DELETE',`/admin/teams/${id}`);
       alert(`Deleted "${name}".`);
       Admin.loadTeams();
+    }catch(e){alert('Error: '+e.message)}
+  },
+  async loadMessages(){
+    const el=document.getElementById('admin-messages-el');
+    el.innerHTML='<div class="loading">Loading messages…</div>';
+    try{
+      const msgs=await Admin.req('GET','/admin/messages');
+      document.getElementById('admin-count').textContent=`${msgs.length} message${msgs.length===1?'':'s'}`;
+      if(!msgs.length){el.innerHTML='<div class="card">No messages.</div>';return}
+      el.innerHTML=msgs.map(m=>{
+        const when=m.created_at?new Date(m.created_at).toLocaleString():'';
+        const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const mailLink=m.email?`<a href="mailto:${esc(m.email)}?subject=Re:%20Flag%20Stats%20help">${esc(m.email)}</a>`:'<span style="color:var(--muted)">(no email)</span>';
+        return `<div class="card">
+          <h3 style="margin-bottom:2px">${esc(m.name)||'(no name)'}</h3>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 6px">${mailLink}${when?' · '+when:''}</p>
+          <p style="white-space:pre-wrap;margin:0 0 8px">${esc(m.message)}</p>
+          <button class="btn btn-danger btn-sm" onclick="Admin.deleteMessage(${m.id})">🗑️ Delete</button>
+        </div>`;
+      }).join('');
+    }catch(e){
+      el.innerHTML='';
+      if(/authorization/i.test(e.message)){ alert('Admin session expired — please unlock again.'); Admin.logout(); return; }
+      el.innerHTML=`<div class="card">${e.message}</div>`;
+    }
+  },
+  async deleteMessage(id){
+    if(!confirm('Delete this message?'))return;
+    try{
+      await Admin.req('DELETE',`/admin/messages/${id}`);
+      Admin.loadMessages();
     }catch(e){alert('Error: '+e.message)}
   }
 };
@@ -735,22 +785,11 @@ const UI={
 // AUTH
 // ============================================================
 const Auth={
-  // Admin contact address. Change this to your email if it ever moves.
-  ADMIN_EMAIL:'brodyfootball2024@gmail.com',
-  showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden')},
+  showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden');
+    // Reset the contact form back to its unsent state.
+    const cf=document.getElementById('contact-form'),cs=document.getElementById('contact-sent');
+    if(cf)cf.classList.remove('hidden'); if(cs)cs.classList.add('hidden');},
   showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
-  // Open the user's email app with a pre-filled message to the admin. Uses a
-  // mailto: link so it works on any device with no server/SMTP setup.
-  emailAdmin(){
-    const subject=encodeURIComponent('Flag Stats — Login help needed');
-    const body=encodeURIComponent(
-      "Hi,\n\nI'm having trouble logging in to Flag Stats and need help.\n\n"+
-      "My team code (if I remember it): \n"+
-      "What I need help with (e.g. password reset): \n\n"+
-      "Thanks!"
-    );
-    window.location.href=`mailto:${this.ADMIN_EMAIL}?subject=${subject}&body=${body}`;
-  },
   async login(){
     const code=document.getElementById('login-code').value.trim();
     const pass=document.getElementById('login-pass').value;
@@ -829,6 +868,27 @@ const Auth={
       const me=await API.get('/me');
       Auth.onLoggedIn(me.team_name);
     }catch(e){API.token=null;localStorage.removeItem('ff_token');UI.show('screen-auth')}
+  }
+};
+
+// ============================================================
+// CONTACT FORM (login screen) — sends a help message to the admin
+// ============================================================
+const Contact={
+  async send(){
+    const name=document.getElementById('contact-name').value.trim();
+    const email=document.getElementById('contact-email').value.trim();
+    const message=document.getElementById('contact-message').value.trim();
+    if(!message){UI.showError('auth-error','Please enter a message.');return}
+    try{
+      await API.post('/contact',{name,email,message});
+      // Clear + show the success note in place of the form.
+      document.getElementById('contact-name').value='';
+      document.getElementById('contact-email').value='';
+      document.getElementById('contact-message').value='';
+      document.getElementById('contact-form').classList.add('hidden');
+      document.getElementById('contact-sent').classList.remove('hidden');
+    }catch(e){UI.showError('auth-error',e.message||'Could not send message. Try again.')}
   }
 };
 

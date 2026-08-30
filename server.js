@@ -188,6 +188,25 @@ app.get('/api/me', authenticate, async (req, res) => {
 });
 
 // ============================================================
+// CONTACT (public) — stores a help/contact message for the admin to read
+// ============================================================
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { name, email, message } = req.body || {};
+    if (!message || !String(message).trim()) return res.status(400).json({ error: 'Please enter a message.' });
+    // Light guardrails so the field can't be abused as unbounded storage.
+    const row = {
+      name: String(name || '').slice(0, 120),
+      email: String(email || '').slice(0, 200),
+      message: String(message).slice(0, 4000),
+      handled: false
+    };
+    await supaInsert('contact_messages', row);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
 // ADMIN ROUTES (gated by ADMIN_KEY env var)
 // ============================================================
 
@@ -271,6 +290,22 @@ app.delete('/api/admin/teams/:id', adminAuth, async (req, res) => {
     try { await supaDelete('seasons', `team_id=eq.${tid}`); } catch (e) {}
     try { await supaDelete('sessions', `team_id=eq.${tid}`); } catch (e) {}
     await supaDelete('teams', `id=eq.${tid}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List contact/help messages (newest first).
+app.get('/api/admin/messages', adminAuth, async (req, res) => {
+  try {
+    const msgs = await supaGet('contact_messages', 'select=id,name,email,message,handled,created_at&order=created_at.desc');
+    res.json(msgs || []);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete a contact message.
+app.delete('/api/admin/messages/:id', adminAuth, async (req, res) => {
+  try {
+    await supaDelete('contact_messages', `id=eq.${req.params.id}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
