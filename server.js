@@ -656,6 +656,30 @@ app.put('/api/games/:gid/plays/:pid', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Same as above, but locate the play by its client-generated uid instead of the
+// DB id. This is what the LIVE game screen uses: plays recorded during a game
+// don't yet carry a server id on the client, but they always carry a clientUid
+// (stored server-side as players._clientUid). Returns notFound:true (200) if the
+// play hasn't reached the server yet — the client then edits its pending queue.
+app.put('/api/games/:gid/plays/by-uid/:uid', authenticate, async (req, res) => {
+  try {
+    const { players, description } = req.body || {};
+    const check = await supaGet('games', `id=eq.${req.params.gid}&select=id,season_id`);
+    if (!check || check.length === 0) return res.status(404).json({ error: 'Game not found' });
+    const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
+    if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
+
+    const rows = await supaGet('plays', `game_id=eq.${req.params.gid}&players->>_clientUid=eq.${encodeURIComponent(req.params.uid)}&select=id,players`);
+    if (!rows || rows.length === 0) return res.json({ ok: true, notFound: true });
+
+    const merged = Object.assign({}, rows[0].players || {}, players || {});
+    const updates = { players: merged };
+    if (typeof description === 'string') updates.description = description;
+    await supaUpdate('plays', `id=eq.${rows[0].id}`, updates);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================================
 // CATCH-ALL: Serve frontend
 // ============================================================

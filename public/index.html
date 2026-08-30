@@ -1881,7 +1881,10 @@ const GameUI={
     }
     const lel=document.getElementById('play-log-el');
     if(!gamePlays.length)lel.innerHTML='<div class="play-log-item">No plays yet</div>';
-    else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>`<div class="play-log-item"><strong>#${gamePlays.length-i}</strong> ${p.description||p.desc||''}</div>`).join('');
+    else lel.innerHTML=gamePlays.slice().reverse().map((p,i)=>{
+      const idx=gamePlays.length-1-i;   // real index into gamePlays
+      return LivePlayEdit.renderItem(p,idx);
+    }).join('');
   },
   fmtYd(){
     const mid=gameState.mid;
@@ -3024,6 +3027,95 @@ const GameActions={
     Games.summary(currentGame.id)
   },
   toggleLog(){document.getElementById('log-card').classList.toggle('hidden')}
+};
+
+// ============================================================
+// LIVE PLAY EDIT — fix a jersey number from the in-game Play Log.
+// Offline-safe: identifies plays by clientUid (live plays have no DB id), and
+// patches the pending sync-queue too so corrections survive an offline sync.
+// ============================================================
+const LivePlayEdit={
+  ROLES:{qb:'QB',receiver:'Receiver',carrier:'Runner',punter:'Punter',kicker:'Kicker',
+    flagPuller:'Flag Puller',defender:'Defender',interceptor:'Interceptor',returner:'Returner',blocker:'Blocker'},
+  _roleKeys(p){
+    const pl=p.players||{};
+    return Object.keys(this.ROLES).filter(k=>pl[k]!==undefined&&pl[k]!==null&&pl[k]!=='');
+  },
+  // Render one live-log row. idx = real index into gamePlays.
+  renderItem(p,idx){
+    const num=idx+1;   // plays are recorded in order, so display # is idx+1
+    const canEdit=this._roleKeys(p).length>0;
+    const editBtn=canEdit?` <span style="cursor:pointer" title="Fix jersey number" onclick="LivePlayEdit.open(${idx})">✏️</span>`:'';
+    return `<div class="play-log-item" id="live-pbp-${idx}"><strong>#${num}</strong> ${p.description||p.desc||''}${editBtn}</div>`;
+  },
+  open(idx){
+    const p=gamePlays[idx]; if(!p)return;
+    const keys=this._roleKeys(p);
+    const pl=p.players||{};
+    const rows=keys.map(k=>`<div class="form-row" style="align-items:center;gap:8px;margin-bottom:6px">
+        <label style="min-width:90px;font-size:0.85rem">${this.ROLES[k]}</label>
+        <input type="number" id="live-pe-${idx}-${k}" value="${pl[k]}" min="0" max="99" style="width:80px;padding:6px;border:1px solid var(--border);border-radius:var(--radius)">
+      </div>`).join('');
+    const el=document.getElementById('live-pbp-'+idx);
+    el.innerHTML=`<div><strong>#${idx+1}</strong> <span style="color:var(--muted);font-size:0.82rem">${p.description||''}</span></div>
+      <div style="margin-top:8px">${rows}
+        <button class="btn btn-success btn-sm" onclick="LivePlayEdit.save(${idx})">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="LivePlayEdit.cancel(${idx})">Cancel</button>
+      </div>`;
+  },
+  cancel(idx){
+    const p=gamePlays[idx];
+    const el=document.getElementById('live-pbp-'+idx);
+    if(el&&p)el.outerHTML=this.renderItem(p,idx);
+  },
+  async save(idx){
+    const p=gamePlays[idx]; if(!p)return;
+    const keys=this._roleKeys(p);
+    const oldPlayers=p.players||{};
+    const changed={};
+    let desc=p.description||'';
+    for(const k of keys){
+      const inp=document.getElementById(`live-pe-${idx}-${k}`);
+      if(!inp)continue;
+      const nv=inp.value.trim();
+      if(nv===''){alert('Jersey number cannot be blank.');return}
+      const ov=String(oldPlayers[k]);
+      if(nv!==ov){ changed[k]=nv; desc=desc.split('#'+ov).join('#'+nv); }
+    }
+    if(Object.keys(changed).length===0){this.cancel(idx);return}
+
+    // 1) Update the in-memory play (source of truth for the live log + stats).
+    p.players=Object.assign({},oldPlayers,changed);
+    p.description=desc;
+
+    // 2) If this play is still waiting in the offline queue, patch it there too
+    //    (matched by clientUid) so the correction syncs later, not the old value.
+    if(p.clientUid){
+      try{
+        const pend=Cache.getPending();
+        let touched=false;
+        for(const e of pend){
+          if(e.play&&e.play.clientUid===p.clientUid){
+            e.play.players=Object.assign({},e.play.players||{},changed);
+            e.play.description=desc;
+            touched=true;
+          }
+        }
+        if(touched)localStorage.setItem(Cache.KEY+'_pending',JSON.stringify(pend));
+      }catch(e){}
+    }
+
+    // 3) Persist the mutated gamePlays locally (offline resume correctness).
+    Cache.saveLocal();
+
+    // 4) Best-effort push to the server by clientUid (harmless if not synced yet;
+    //    the queued copy from step 2 carries the fix when it eventually syncs).
+    if(p.clientUid){
+      try{ await API.put(`/games/${currentGame.id}/plays/by-uid/${encodeURIComponent(p.clientUid)}`,{players:changed,description:desc}); }catch(e){}
+    }
+
+    GameUI.refresh();   // re-render the log with the corrected number
+  }
 };
 
 // ============================================================

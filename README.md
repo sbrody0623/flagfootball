@@ -16,7 +16,7 @@ A mobile-friendly web app ("Flag Stats") for tracking live flag football game st
 - **Special Situations** — Onside-kick option for a trailing team in the second half, free kick after a safety, quarter/overtime handling.
 - **Box Score** — Downloadable / printable per-game box score with passing, rushing, receiving, defense, punting, and kicking stats (by quarter or full game).
 - **Game History** — Resume an in-progress game, view summaries, end an unfinished game, or delete a game.
-- **Fix a jersey number** — from a game's summary, tap ✏️ on any play to correct a mis-entered player number; stats and the box score update automatically. (Play type, result, and yards aren't editable, since they drive the game engine.)
+- **Fix a jersey number** — tap ✏️ on any play, either in the live game's Play Log (📝 Log) or from a finished game's summary, to correct a mis-entered player number; stats and the box score update automatically. In-game edits are offline-safe (they patch the pending sync queue too). (Play type, result, and yards aren't editable, since they drive the game engine.)
 - **Installable PWA** — Add to your home screen as "Flag Stats" and launch it like a native app.
 - **Offline-tolerant** — See [Offline Support](#offline-support) below.
 
