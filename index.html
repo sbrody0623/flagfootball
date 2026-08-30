@@ -901,18 +901,20 @@ const Auth={
   },
   async onLoggedIn(teamName){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
-    // Check server for any in-progress game, fall back to cache only if offline
     const cacheCard=document.getElementById('resume-cache-card');
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
-    // FIRST: flush any plays that were recorded offline and are waiting to sync.
-    // (We reconnected — this is the moment to get them to the server before we
-    // touch any cached state.)
-    try{ await Cache.syncPending(); }catch(e){}
-    Banner.update();
+    // Show the home screen FIRST. This synchronously sets up the browser-history
+    // anchor (root + screen-home) so the hardware BACK button works immediately.
+    // (Previously an `await` before this delayed the anchor on mobile, letting the
+    // first back press escape the app instead of triggering the logout confirm.)
+    UI.show('screen-home');
+    // Now do the network work in the background — none of it blocks the anchor.
     Auth.checkActiveGame(teamName);
     Seasons.loadList();     // render the seasons list on the home screen
-    UI.show('screen-home');
+    // Flush any plays recorded offline that are waiting to sync (fire-and-forget).
+    Cache.syncPending().then(()=>Banner.update()).catch(()=>{});
+    Banner.update();
   },
   async checkActiveGame(teamName){
     const cacheCard=document.getElementById('resume-cache-card');

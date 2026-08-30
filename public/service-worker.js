@@ -2,7 +2,7 @@
 // Caches the app shell so it installs and loads offline.
 // Network-first for navigation/pages so updates and API calls always work.
 
-const CACHE = 'ff-tracker-v14';
+const CACHE = 'ff-tracker-v15';
 // Only cache icons. HTML/JS is always fetched fresh so code updates apply immediately.
 const SHELL = [
   './icon-192.png',
