@@ -106,6 +106,7 @@ h3{font-size:1rem;margin-bottom:6px}
 </head>
 <body>
 <div class="app-header" id="app-header" onclick="UI.headerTap()">🏈 Flag Football Stat Tracker</div>
+<div id="sync-banner" onclick="Banner.tapSync()" style="display:none;background:#fff3cd;color:#7a5c00;font-size:0.82rem;font-weight:600;text-align:center;padding:6px 8px;cursor:pointer;border-bottom:1px solid #ffe08a;"></div>
 <pre id="back-debug" style="display:none;background:#111;color:#0f0;font-size:11px;line-height:1.3;margin:0;padding:6px 8px;white-space:pre-wrap;max-height:120px;overflow:auto;"></pre>
 <div class="container" id="app">
 
@@ -437,17 +438,25 @@ const Cache={
     localStorage.removeItem(this.KEY+'_pending');
   },
 
-  // Queue a play to sync later
+  // Generate a stable unique id for a play so re-syncing can't create dupes.
+  uid(){ return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8); },
+
+  // Queue a play to sync later. Each entry is TAGGED with the game id it belongs
+  // to, so a later sync can NEVER post it to the wrong game.
   queuePlay(play){
+    if(play && !play.clientUid) play.clientUid=this.uid();
+    const gid=(currentGame&&currentGame.id)||(play&&play._gameId)||null;
     const pending=this.getPending();
-    pending.push(play);
+    pending.push({gameId:gid, play:play});
     localStorage.setItem(this.KEY+'_pending',JSON.stringify(pending));
   },
 
-  // Get pending plays that haven't synced
+  // Get pending plays that haven't synced. Normalizes old (untagged) entries
+  // from previous app versions into the {gameId, play} shape.
   getPending(){
     try{
-      return JSON.parse(localStorage.getItem(this.KEY+'_pending')||'[]');
+      const raw=JSON.parse(localStorage.getItem(this.KEY+'_pending')||'[]');
+      return raw.map(e=>(e&&e.play)?e:{gameId:(currentGame&&currentGame.id)||null, play:e});
     }catch(e){return[]}
   },
 
@@ -456,35 +465,39 @@ const Cache={
     localStorage.setItem(this.KEY+'_pending','[]');
   },
 
-  // Attempt to sync pending plays to server
+  // Attempt to sync pending plays to server. Posts each queued play to ITS OWN
+  // game id (from the tag). Idempotent on the server via clientUid, so a retry
+  // after a lost response won't duplicate. Also pushes the current game's score
+  // /state so the server reflects everything recorded offline.
   async syncPending(){
     const pending=this.getPending();
     if(!pending.length)return;
-    if(!currentGame)return;
+    const remaining=[];
     let synced=0;
-    for(const play of pending){
+    for(const entry of pending){
+      const gid=entry.gameId;
+      const play=entry.play;
+      if(!gid){ remaining.push(entry); continue; }  // can't place it — keep for later
       try{
-        await API.post(`/games/${currentGame.id}/plays`,play);
+        await API.post(`/games/${gid}/plays`,play);
         synced++;
       }catch(e){
-        // Still offline, stop trying
-        break;
+        // Network still down (or this game failed) — keep this and everything after.
+        remaining.push(entry);
       }
     }
-    if(synced>0){
-      // Remove synced plays from pending
-      const remaining=pending.slice(synced);
-      localStorage.setItem(this.KEY+'_pending',JSON.stringify(remaining));
-    }
-    // Sync game state
-    if(synced>0){
+    localStorage.setItem(this.KEY+'_pending',JSON.stringify(remaining));
+    // Push the live game's score/state up so the server matches the tablet.
+    if(synced>0 && currentGame){
       try{
         await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState});
       }catch(e){}
     }
-    if(synced>0&&pending.length===synced){
-      console.log(`✅ Synced ${synced} cached plays`);
+    if(synced>0){
+      console.log(`✅ Synced ${synced} cached play(s)`);
+      Banner.update();
     }
+    return {synced, remaining:remaining.length};
   },
 
   // Check if we're online
@@ -498,11 +511,50 @@ const Cache={
   }
 };
 
-// Listen for coming back online
+// Listen for coming back online — flush the queue as soon as connectivity returns.
 window.addEventListener('online',()=>{
   console.log('Back online - syncing...');
-  Cache.syncPending();
+  Cache.syncPending().then(()=>Banner.update());
 });
+
+// Safety net: also retry the queue on a slow timer. `navigator.onLine` and the
+// 'online' event are unreliable on some Android builds, so we poll every 20s
+// while there is anything pending. This guarantees offline plays eventually
+// reach the server without the user doing anything.
+setInterval(()=>{
+  if(API.token && Cache.getPending().length>0){
+    Cache.syncPending().then(()=>Banner.update());
+  }
+},20000);
+
+// ============================================================
+// SYNC BANNER — always shows the true offline/unsynced state
+// ============================================================
+const Banner={
+  el(){return document.getElementById('sync-banner');},
+  update(){
+    const el=this.el(); if(!el)return;
+    const n=Cache.getPending().length;
+    if(n>0){
+      el.textContent=`⚠️ ${n} play${n===1?'':'s'} saved on this device, not yet synced — tap to retry`;
+      el.style.display='block';
+    }else{
+      el.style.display='none';
+      el.textContent='';
+    }
+  },
+  async tapSync(){
+    const el=this.el();
+    if(el)el.textContent='⏳ Syncing…';
+    const res=await Cache.syncPending();
+    this.update();
+    const left=Cache.getPending().length;
+    if(left>0) alert(`Still offline — ${left} play(s) are safely stored on this device and will sync automatically when you have a connection.`);
+    else alert('✅ All plays synced to the server.');
+  }
+};
+// Reflect the current state on load.
+Banner.update();
 
 // ============================================================
 // UI
@@ -597,20 +649,26 @@ const Auth={
       Auth.onLoggedIn(data.teamName);
     }catch(e){UI.showError('auth-error',e.message)}
   },
-  onLoggedIn(teamName){
+  async onLoggedIn(teamName){
     document.getElementById('home-team-name').textContent='🏈 '+teamName;
     // Check server for any in-progress game, fall back to cache only if offline
     const cacheCard=document.getElementById('resume-cache-card');
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
+    // FIRST: flush any plays that were recorded offline and are waiting to sync.
+    // (We reconnected — this is the moment to get them to the server before we
+    // touch any cached state.)
+    try{ await Cache.syncPending(); }catch(e){}
+    Banner.update();
     Auth.checkActiveGame(teamName);
     Seasons.loadList();     // render the seasons list on the home screen
     UI.show('screen-home');
   },
   async checkActiveGame(teamName){
     const cacheCard=document.getElementById('resume-cache-card');
-    // Always clear stale cache first
-    Cache.clear();
+    // Clear only the STALE game snapshot — but NEVER discard pending plays that
+    // still need to sync (those are dropped only after a successful sync).
+    if(Cache.getPending().length===0) Cache.clear();
     try{
       const seasons=await API.get('/seasons');
       if(!seasons||!seasons.length)return;
@@ -1400,6 +1458,7 @@ const GameUI={
     document.getElementById('g-yd').textContent=this.fmtYd();
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
     document.getElementById('g-sync').textContent=Cache.getStatus();
+    if(typeof Banner!=='undefined')Banner.update();
     // Switch button: only on the first play of Q1, the first play of Q3 (2nd half), or in overtime.
     const canSwitch=(!!gameState.halfStart)||(!!gameState.overtime);
     document.getElementById('switch-btn').classList.toggle('hidden',!canSwitch);
@@ -1837,9 +1896,10 @@ const Flow={
       }
       const penPlayers=Object.assign({},c.players||{});
       penPlayers._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
-      const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:penFinalDesc,quarter:gameState.quarter||1,penalty:pen};
+      const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:penFinalDesc,quarter:gameState.quarter||1,penalty:pen,clientUid:Cache.uid(),_gameId:currentGame.id};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+      Banner.update();
       try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
       Cache.saveLocal();
       GameUI.refresh();Flow.restart();return;
@@ -1978,10 +2038,11 @@ const Flow={
     // Full snapshot of state BEFORE this play, for undo
     playersData._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
     // Save play to server
-    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1};
+    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1,clientUid:Cache.uid(),_gameId:currentGame.id};
     gamePlays.push(play);
     // Save to server, fall back to cache if offline
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+    Banner.update();
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
     // Always save locally as backup
     Cache.saveLocal();
@@ -2441,11 +2502,11 @@ const GameActions={
     gameState.down=4;
     gameState.firstDownLine=40;
     gameState.onsideOffer=false; // used it — clear the offer
-    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'onside',result:'onside',players:{},yards:0,downBefore:4,ballPosBefore:20,description:`🎯 ONSIDE KICK — ${trailingName} 4th & 20 from own 20`,quarter:gameState.quarter||1};
+    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'onside',result:'onside',players:{},yards:0,downBefore:4,ballPosBefore:20,description:`🎯 ONSIDE KICK — ${trailingName} 4th & 20 from own 20`,quarter:gameState.quarter||1,clientUid:Cache.uid(),_gameId:currentGame.id};
     gamePlays.push(play);
     API.post(`/games/${currentGame.id}/plays`,play).catch(()=>Cache.queuePlay(play));
     API.put(`/games/${currentGame.id}`,{gameState}).catch(()=>{});
-    Cache.saveLocal();
+    Cache.saveLocal();Banner.update();
     GameUI.refresh();Flow.restart();
   },
   async endQuarter(){
@@ -2458,9 +2519,10 @@ const GameActions={
       if(currentGame.teamScore===currentGame.oppScore){
         if(confirm('Game is TIED! Record overtime?')){
           // Go to overtime
-          const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} — OVERTIME ──`,quarter:qtr};
+          const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} — OVERTIME ──`,quarter:qtr,clientUid:Cache.uid(),_gameId:currentGame.id};
           gamePlays.push(play);
           try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+          Banner.update();
           gameState.quarter=qtr+1;
           // Overtime: offense starts 1st & GOAL at the opponent's 10 (4 downs to score).
           Engine.switchOff(gameState.fieldLength-10);
@@ -2473,16 +2535,18 @@ const GameActions={
         }
       }
       // End the game
-      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} — FINAL ──`,quarter:qtr};
+      const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} — FINAL ──`,quarter:qtr,clientUid:Cache.uid(),_gameId:currentGame.id};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+      Banner.update();
       this.endGame();
       return;
     }
     // Record end-of-quarter marker
-    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} ──`,quarter:qtr};
+    const play={playNumber:gamePlays.length+1,possession:gameState.possession,playType:'quarter',result:'end',players:{},yards:0,downBefore:gameState.down,ballPosBefore:gameState.ballPos,description:`── End of Q${qtr} ──`,quarter:qtr,clientUid:Cache.uid(),_gameId:currentGame.id};
     gamePlays.push(play);
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
+    Banner.update();
 
     gameState.quarter=qtr+1;
 
@@ -2509,6 +2573,14 @@ const GameActions={
   async undo(){
     if(!gamePlays.length){alert('Nothing to undo');return}if(!confirm('Undo last play?'))return;
     const removed=gamePlays.pop();
+    // If this play was still waiting to sync (recorded offline), drop it from the
+    // pending queue too — otherwise it would resurrect on the next sync.
+    if(removed&&removed.clientUid){
+      try{
+        const pend=Cache.getPending().filter(e=>!(e.play&&e.play.clientUid===removed.clientUid));
+        localStorage.setItem(Cache.KEY+'_pending',JSON.stringify(pend));
+      }catch(e){}
+    }
     // Restore the state snapshot saved before that play
     let restored=false;
     try{

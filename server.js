@@ -348,20 +348,46 @@ app.get('/api/games/:gid/plays', authenticate, async (req, res) => {
     const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
     if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
     const plays = await supaGet('plays', `game_id=eq.${req.params.gid}&order=play_number.asc`);
-    res.json(plays);
+    // Surface the quarter (stashed inside the players JSON) as a top-level field
+    // so the client's box score / quarter filter can read play.quarter directly.
+    const out = (plays || []).map(p => {
+      const pl = p.players || {};
+      return Object.assign({}, p, { quarter: (pl._quarter !== undefined ? pl._quarter : null) });
+    });
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/games/:gid/plays', authenticate, async (req, res) => {
   try {
-    const { playNumber, possession, playType, result, players, yards, downBefore, ballPosBefore, description } = req.body;
+    const { playNumber, possession, playType, result, players, yards, downBefore, ballPosBefore, description, quarter, clientUid } = req.body;
     const check = await supaGet('games', `id=eq.${req.params.gid}&select=id,season_id`);
     if (!check || check.length === 0) return res.status(404).json({ error: 'Game not found' });
     const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
     if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
+
+    // Build the players JSON blob. We stash `quarter` and a stable `clientUid`
+    // INSIDE this JSON so we need NO Supabase schema changes (the plays table
+    // has no dedicated quarter/client_uid columns). clientUid makes re-syncing
+    // idempotent: if a play with the same uid already exists for this game we
+    // do NOT insert a duplicate (guards against lost-response re-sends).
+    const playersBlob = Object.assign({}, players || {});
+    if (quarter !== undefined && quarter !== null) playersBlob._quarter = quarter;
+    if (clientUid) playersBlob._clientUid = clientUid;
+
+    // Idempotency check: has a play with this clientUid already been saved?
+    if (clientUid) {
+      try {
+        const existing = await supaGet('plays', `game_id=eq.${req.params.gid}&players->>_clientUid=eq.${encodeURIComponent(clientUid)}&select=id`);
+        if (existing && existing.length > 0) {
+          return res.json({ id: existing[0].id, duplicate: true });
+        }
+      } catch (e) { /* if the filter isn't supported, fall through and just insert */ }
+    }
+
     const play = await supaInsert('plays', {
       game_id: parseInt(req.params.gid), play_number: playNumber || 0, possession: possession || 'offense',
-      play_type: playType || '', result: result || '', players: players || {},
+      play_type: playType || '', result: result || '', players: playersBlob,
       yards: yards || 0, down_before: downBefore || 1, ball_pos_before: ballPosBefore || 0, description: description || ''
     });
     res.json({ id: play.id });
