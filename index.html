@@ -384,6 +384,29 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="summary-el"></div>
 </div>
 
+<!-- ADMIN PANEL (reached via the /admin URL) -->
+<div id="screen-admin" class="hidden">
+  <div id="admin-login" class="card">
+    <h3>🔒 Admin Panel</h3>
+    <p style="font-size:0.85rem;color:var(--muted)">Enter the admin key to manage team accounts.</p>
+    <div class="form-group"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Admin key" autocapitalize="none"></div>
+    <button class="btn btn-primary" onclick="Admin.login()">Unlock</button>
+    <div style="text-align:center;margin-top:8px"><span style="font-size:0.85rem;color:var(--primary);cursor:pointer" onclick="Admin.exit()">← Back to app</span></div>
+    <div id="admin-error" class="error-box hidden"></div>
+  </div>
+  <div id="admin-panel" class="hidden">
+    <div class="team-header">
+      <span class="team-name">🔒 Admin</span>
+      <span class="logout-btn" onclick="Admin.logout()">Lock</span>
+    </div>
+    <div class="card">
+      <button class="btn btn-secondary btn-sm" onclick="Admin.loadTeams()">🔄 Refresh</button>
+      <span style="font-size:0.85rem;color:var(--muted);margin-left:8px" id="admin-count"></span>
+    </div>
+    <div id="admin-teams-el"></div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -559,6 +582,90 @@ const Banner={
 };
 // Reflect the current state on load.
 Banner.update();
+
+// ============================================================
+// ADMIN PANEL (separate auth via x-admin-token; reached at /admin)
+// ============================================================
+const Admin={
+  token:null,
+  // Admin API call — uses its own token header, never the team token.
+  async req(method,path,body){
+    const opts={method,headers:{'Content-Type':'application/json'}};
+    if(this.token)opts.headers['x-admin-token']=this.token;
+    if(body)opts.body=JSON.stringify(body);
+    const res=await fetch('/api'+path,opts);
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Request failed');
+    return data;
+  },
+  // Open the admin screen (called when the URL path is /admin).
+  open(){
+    document.getElementById('admin-login').classList.remove('hidden');
+    document.getElementById('admin-panel').classList.add('hidden');
+    document.getElementById('admin-key').value='';
+    UI.show('screen-admin');
+  },
+  exit(){ Auth.check(); },   // leave admin, go back to normal app flow
+  async login(){
+    const key=document.getElementById('admin-key').value;
+    if(!key){UI.showError('admin-error','Enter the admin key');return}
+    try{
+      const data=await Admin.req('POST','/admin/login',{key});
+      Admin.token=data.token;
+      document.getElementById('admin-login').classList.add('hidden');
+      document.getElementById('admin-panel').classList.remove('hidden');
+      Admin.loadTeams();
+    }catch(e){UI.showError('admin-error',e.message)}
+  },
+  async logout(){
+    try{await Admin.req('POST','/admin/logout')}catch(e){}
+    Admin.token=null;
+    Admin.open();
+  },
+  async loadTeams(){
+    const el=document.getElementById('admin-teams-el');
+    el.innerHTML='<div class="loading">Loading teams…</div>';
+    try{
+      const teams=await Admin.req('GET','/admin/teams');
+      document.getElementById('admin-count').textContent=`${teams.length} team${teams.length===1?'':'s'}`;
+      if(!teams.length){el.innerHTML='<div class="card">No teams yet.</div>';return}
+      el.innerHTML=teams.map(t=>{
+        const created=t.created_at?new Date(t.created_at).toLocaleDateString():'';
+        const safeName=(t.team_name||'').replace(/'/g,"\\'");
+        return `<div class="card">
+          <h3>${t.team_name||'(no name)'}</h3>
+          <p style="font-size:0.85rem;color:var(--muted);margin:2px 0">Code: <strong>${t.login_code}</strong> · ${t.seasonCount} season(s) · ${t.gameCount} game(s)${created?' · '+created:''}</p>
+          <button class="btn btn-warning btn-sm" onclick="Admin.resetPassword(${t.id},'${safeName}','${t.login_code}')">🔑 Reset Password</button>
+          <button class="btn btn-danger btn-sm" onclick="Admin.deleteTeam(${t.id},'${safeName}')">🗑️ Delete Team</button>
+        </div>`;
+      }).join('');
+    }catch(e){
+      el.innerHTML='';
+      if(/authorization/i.test(e.message)){ alert('Admin session expired — please unlock again.'); Admin.logout(); return; }
+      UI.showError('admin-error',e.message);
+      el.innerHTML=`<div class="card">${e.message}</div>`;
+    }
+  },
+  async resetPassword(id,name,code){
+    const np=prompt(`Set a NEW password for "${name}" (code: ${code}).\nGive this password to the team.`);
+    if(np===null)return;                 // cancelled
+    if(np.length<4){alert('Password must be at least 4 characters');return}
+    try{
+      await Admin.req('POST',`/admin/teams/${id}/reset-password`,{newPassword:np});
+      alert(`✅ Password reset for "${name}".\nNew password: ${np}\n\nTheir old logins have been signed out.`);
+    }catch(e){alert('Error: '+e.message)}
+  },
+  async deleteTeam(id,name){
+    const typed=prompt(`⚠️ This permanently deletes "${name}" and ALL its seasons, games, and stats.\n\nType the team name to confirm:`);
+    if(typed===null)return;
+    if(typed!==name){alert('Name did not match — nothing deleted.');return}
+    try{
+      await Admin.req('DELETE',`/admin/teams/${id}`);
+      alert(`Deleted "${name}".`);
+      Admin.loadTeams();
+    }catch(e){alert('Error: '+e.message)}
+  }
+};
 
 // ============================================================
 // UI
@@ -2702,6 +2809,11 @@ window.addEventListener('popstate', function(ev){
       try{ history.pushState({screen:'screen-auth'},''); }catch(e){}
       return;
     }
+    if(UI.current==='screen-admin'){
+      // On the admin panel: back leaves admin and returns to the normal app.
+      Admin.exit();
+      return;
+    }
     // Anywhere else (normally Home) -> offer logout, and PIN the pointer so the
     // app never falls out from under us regardless of the user's choice.
     try{ history.pushState({screen:UI.current},''); }catch(e){}
@@ -2725,7 +2837,12 @@ if('serviceWorker' in navigator){
 // ============================================================
 // INIT
 // ============================================================
-Auth.check();
+// The /admin URL opens the admin panel; everything else is the normal app.
+if(location.pathname.replace(/\/+$/,'')==='/admin'){
+  Admin.open();
+}else{
+  Auth.check();
+}
 </script>
 </body>
 </html>

@@ -12,6 +12,22 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL; // e.g. https://abcdefgh.supabase.co
 const SUPABASE_KEY = process.env.SUPABASE_KEY; // service_role key
 
+// Admin panel secret. Set ADMIN_KEY as an environment variable on Render to
+// enable the /admin panel. If unset, all admin endpoints are disabled.
+const ADMIN_KEY = process.env.ADMIN_KEY;
+// In-memory admin sessions (token -> expiry). Not persisted: an admin just
+// re-enters the key after a server restart. Each session lasts 1 hour.
+const adminSessions = new Map();
+const ADMIN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// Constant-time-ish comparison to avoid trivially leaking the key length/prefix.
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ab = Buffer.from(a), bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  try { return crypto.timingSafeEqual(ab, bb); } catch (e) { return false; }
+}
+
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -102,6 +118,18 @@ async function authenticate(req, res, next) {
   }
 }
 
+// Admin auth: requires a valid, unexpired admin token (issued by /api/admin/login).
+function adminAuth(req, res, next) {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'Admin panel not configured. Set ADMIN_KEY on the server.' });
+  const token = req.headers['x-admin-token'];
+  const exp = token && adminSessions.get(token);
+  if (!exp || exp < Date.now()) {
+    if (token) adminSessions.delete(token);
+    return res.status(403).json({ error: 'Admin authorization required' });
+  }
+  next();
+}
+
 // ============================================================
 // AUTH ROUTES
 // ============================================================
@@ -156,6 +184,94 @@ app.get('/api/me', authenticate, async (req, res) => {
   try {
     const teams = await supaGet('teams', `id=eq.${req.teamId}&select=id,team_name,login_code`);
     res.json(teams[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
+// ADMIN ROUTES (gated by ADMIN_KEY env var)
+// ============================================================
+
+// Whether the admin panel is usable at all (used by the UI to show/hide it).
+app.get('/api/admin/status', (req, res) => {
+  res.json({ enabled: !!ADMIN_KEY });
+});
+
+// Exchange the admin key for a short-lived admin token.
+app.post('/api/admin/login', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'Admin panel not configured. Set ADMIN_KEY on the server.' });
+  const { key } = req.body || {};
+  if (!key || !safeEqual(String(key), String(ADMIN_KEY))) {
+    return res.status(403).json({ error: 'Incorrect admin key' });
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  adminSessions.set(token, Date.now() + ADMIN_TTL_MS);
+  res.json({ token, expiresInMs: ADMIN_TTL_MS });
+});
+
+// Log out an admin session.
+app.post('/api/admin/logout', adminAuth, (req, res) => {
+  adminSessions.delete(req.headers['x-admin-token']);
+  res.json({ ok: true });
+});
+
+// List every team with season/game counts (never returns password hashes).
+app.get('/api/admin/teams', adminAuth, async (req, res) => {
+  try {
+    const teams = await supaGet('teams', 'select=id,team_name,login_code,created_at&order=created_at.desc');
+    const out = [];
+    for (const t of (teams || [])) {
+      let seasonCount = 0, gameCount = 0;
+      try {
+        const seasons = await supaGet('seasons', `team_id=eq.${t.id}&select=id`);
+        seasonCount = (seasons || []).length;
+        for (const s of (seasons || [])) {
+          const games = await supaGet('games', `season_id=eq.${s.id}&select=id`);
+          gameCount += (games || []).length;
+        }
+      } catch (e) { /* counts are best-effort */ }
+      out.push({ id: t.id, team_name: t.team_name, login_code: t.login_code, created_at: t.created_at, seasonCount, gameCount });
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Reset a team's password to an admin-supplied value.
+app.post('/api/admin/teams/:id/reset-password', adminAuth, async (req, res) => {
+  try {
+    const { newPassword } = req.body || {};
+    if (!newPassword || String(newPassword).length < 4) {
+      return res.status(400).json({ error: 'New password must be at least 4 characters' });
+    }
+    const teams = await supaGet('teams', `id=eq.${req.params.id}&select=id`);
+    if (!teams || teams.length === 0) return res.status(404).json({ error: 'Team not found' });
+    const hash = bcrypt.hashSync(String(newPassword), 10);
+    await supaUpdate('teams', `id=eq.${req.params.id}`, { password_hash: hash });
+    // Invalidate any existing login sessions for that team so old logins can't linger.
+    try { await supaDelete('sessions', `team_id=eq.${req.params.id}`); } catch (e) {}
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete a team and ALL of its data (seasons, games, plays, players, sessions).
+app.delete('/api/admin/teams/:id', adminAuth, async (req, res) => {
+  try {
+    const tid = req.params.id;
+    const teams = await supaGet('teams', `id=eq.${tid}&select=id`);
+    if (!teams || teams.length === 0) return res.status(404).json({ error: 'Team not found' });
+    // Cascade manually (in case DB-level ON DELETE CASCADE isn't set up).
+    const seasons = await supaGet('seasons', `team_id=eq.${tid}&select=id`);
+    for (const s of (seasons || [])) {
+      const games = await supaGet('games', `season_id=eq.${s.id}&select=id`);
+      for (const g of (games || [])) {
+        try { await supaDelete('plays', `game_id=eq.${g.id}`); } catch (e) {}
+      }
+      try { await supaDelete('games', `season_id=eq.${s.id}`); } catch (e) {}
+      try { await supaDelete('players', `season_id=eq.${s.id}`); } catch (e) {}
+    }
+    try { await supaDelete('seasons', `team_id=eq.${tid}`); } catch (e) {}
+    try { await supaDelete('sessions', `team_id=eq.${tid}`); } catch (e) {}
+    await supaDelete('teams', `id=eq.${tid}`);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
