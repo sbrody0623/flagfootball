@@ -126,12 +126,15 @@ h3{font-size:1rem;margin-bottom:6px}
         <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showRegister()">Create Account</span>
       </div>
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-        <p style="font-size:0.8rem;color:var(--muted);margin:0 0 8px;text-align:center">Forgot your password or can't log in?</p>
-        <div id="contact-form">
+        <p style="font-size:0.8rem;color:var(--muted);margin:0;text-align:center">
+          Forgot your password or can't log in?
+          <span style="color:var(--primary);cursor:pointer;font-weight:600" onclick="Contact.toggle()">📧 Contact admin</span>
+        </p>
+        <div id="contact-form" class="hidden" style="margin-top:10px">
           <div class="form-group"><label>Your Name</label><input type="text" id="contact-name" placeholder="Name"></div>
           <div class="form-group"><label>Your Email</label><input type="email" id="contact-email" placeholder="you@example.com" autocapitalize="none"></div>
           <div class="form-group"><label>Message</label><textarea id="contact-message" placeholder="Describe what you need (e.g. password reset for team code ...)" style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:0.9rem;font-family:inherit"></textarea></div>
-          <button class="btn btn-secondary" onclick="Contact.send()">📧 Send Message to Admin</button>
+          <button class="btn btn-secondary" onclick="Contact.send()">Send Message to Admin</button>
         </div>
         <div id="contact-sent" class="hidden" style="text-align:center;color:#2e7d32;font-size:0.9rem;padding:8px">✅ Message sent! The admin will get back to you.</div>
       </div>
@@ -833,9 +836,8 @@ const UI={
 // ============================================================
 const Auth={
   showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden');document.getElementById('auth-reset').classList.add('hidden');
-    // Reset the contact form back to its unsent state.
-    const cf=document.getElementById('contact-form'),cs=document.getElementById('contact-sent');
-    if(cf)cf.classList.remove('hidden'); if(cs)cs.classList.add('hidden');},
+    // Collapse + reset the contact form.
+    if(typeof Contact!=='undefined')Contact.reset();},
   showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-reset').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
   // Open the password-reset flow at step 1.
   showReset(){
@@ -1000,6 +1002,23 @@ const Account={
 // CONTACT FORM (login screen) — sends a help message to the admin
 // ============================================================
 const Contact={
+  _open:false,
+  // Expand/collapse the contact form.
+  toggle(){
+    this._open=!this._open;
+    document.getElementById('contact-form').classList.toggle('hidden',!this._open);
+    // Hitting the toggle again also clears any prior "sent" note.
+    document.getElementById('contact-sent').classList.add('hidden');
+  },
+  // Collapse and reset the form back to its starting state.
+  reset(){
+    this._open=false;
+    document.getElementById('contact-form').classList.add('hidden');
+    document.getElementById('contact-sent').classList.add('hidden');
+    document.getElementById('contact-name').value='';
+    document.getElementById('contact-email').value='';
+    document.getElementById('contact-message').value='';
+  },
   async send(){
     const name=document.getElementById('contact-name').value.trim();
     const email=document.getElementById('contact-email').value.trim();
@@ -1007,12 +1026,15 @@ const Contact={
     if(!message){UI.showError('auth-error','Please enter a message.');return}
     try{
       await API.post('/contact',{name,email,message});
-      // Clear + show the success note in place of the form.
+      // Clear fields, collapse the form, and briefly show the success note.
       document.getElementById('contact-name').value='';
       document.getElementById('contact-email').value='';
       document.getElementById('contact-message').value='';
+      this._open=false;
       document.getElementById('contact-form').classList.add('hidden');
       document.getElementById('contact-sent').classList.remove('hidden');
+      // Auto-hide the success note after a few seconds so the panel returns to its clean, collapsed state.
+      setTimeout(()=>{document.getElementById('contact-sent').classList.add('hidden');},5000);
     }catch(e){UI.showError('auth-error',e.message||'Could not send message. Try again.')}
   }
 };
