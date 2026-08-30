@@ -509,11 +509,21 @@ window.addEventListener('online',()=>{
 // ============================================================
 const UI={
   current:'screen-auth',
+  _restoring:false,   // true while we're rendering a screen in response to a back press
+  // Low-level screen switch. Also records the screen in browser history so the
+  // hardware/browser BACK button walks screens accurately (we cooperate with
+  // the browser's own history instead of using fake trap entries).
   show(id){
-    // Pure screen switch. Nothing to do with browser history.
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
+    // Only push a new history entry for FORWARD navigation. When we're restoring
+    // a screen because the user pressed back, we must NOT push (that would fight
+    // the browser and strand them).
+    if(!this._restoring){
+      try{ history.pushState({screen:id},''); }catch(e){}
+    }
+    _dbg('show '+id);
   },
   // Triple-tap the header to toggle the back-button debug readout.
   _tapCount:0, _tapTimer:null,
@@ -529,22 +539,24 @@ const UI={
   },
   // Browser/hardware BACK does exactly what the on-screen "← Back" link does for each screen.
   goHome(){ Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); },
-  handleBack(){
-    switch(this.current){
-      case 'screen-game':
-        // Confirm before leaving a live game
-        if(confirm('Leave the game? Your progress is saved — you can Resume from Home.'))this.goHome();
-        break;
-      case 'screen-summary':      Games.loadHistory(); break;      // → Game History
-      case 'screen-history':      Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-players':      Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-rules':        Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-new-game':     Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-dash':         this.goHome();       break;      // → Home (which lists seasons)
-      case 'screen-create-season':this.goHome();       break;      // → Home
-      case 'screen-home':         if(confirm('Log out of the app?'))Auth.logout(); break;
-      default: /* auth screen — stay put */ break;
+  // Render a screen WITHOUT pushing a new history entry (used when responding to
+  // the browser's back button — the browser already moved the pointer for us).
+  restore(id){
+    this._restoring=true;
+    // Re-render the target screen via its normal entry function so its content
+    // (lists, dashboards, etc.) is rebuilt, not just un-hidden.
+    switch(id){
+      case 'screen-home':          Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); break;
+      case 'screen-create-season': Seasons.showCreate(); break;
+      case 'screen-dash':          Seasons.showDash();   break;
+      case 'screen-players':       Players.load();       break;
+      case 'screen-rules':         Rules.show();         break;
+      case 'screen-new-game':      Games.showNew();      break;
+      case 'screen-history':       Games.loadHistory();  break;
+      case 'screen-auth':          this.show('screen-auth'); break;
+      default:                     this.show(id);        break;
     }
+    this._restoring=false;
   },
   showError(id,msg){const el=document.getElementById(id);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000)}
 };
@@ -2545,51 +2557,62 @@ window.addEventListener('beforeunload',function(e){
 
 // BACK button handling.
 // -----------------------------------------------------------
-// Strategy: keep a BUFFER of trap history entries in front of the app so a
-// back press always lands on a trap (never on the launcher/blank -> app exit).
-// Each real back press consumes one trap; we intercept it, run handleBack(),
-// then top the buffer back up. We keep several traps because some Android
-// Chrome / standalone-PWA builds coalesce or ignore a pushState made inside
-// the popstate handler.
-var BACK_BUFFER = 5;        // how many trap entries to keep ahead of the app
-var _backDepth  = 0;        // how many traps we believe are currently pushed
-var _reentry    = false;    // guards against our own pushState firing popstate
+// New strategy: COOPERATE with the browser's own history instead of using fake
+// trap entries. Every UI.show() pushes a real history entry {screen:id}. When
+// the user presses BACK, popstate fires with the PREVIOUS entry's state, and we
+// simply render whatever screen it names. This walks screens accurately no
+// matter how deep, because the browser — not us — tracks the stack.
+//
+//   Forward nav:  UI.show('screen-x')  -> pushState {screen:'screen-x'}
+//   Back press:   popstate -> event.state.screen -> UI.restore(that screen)
+//   Past the app: event.state is null  -> we're at the very first entry:
+//                 if on home, confirm logout; otherwise re-anchor home.
 
 function _dbg(msg){
   var el = document.getElementById('back-debug');
   if(!el) return;
-  var line = new Date().toLocaleTimeString() + '  ' + msg + '  [cur=' + (UI&&UI.current) + ' depth=' + _backDepth + ']';
+  var st = (history.state && history.state.screen) || '(root)';
+  var line = new Date().toLocaleTimeString() + '  ' + msg + '  [cur=' + (UI&&UI.current) + ' hist=' + st + ']';
   el.textContent = (line + '\n' + el.textContent).split('\n').slice(0,8).join('\n');
 }
 
-// Push traps until the buffer is full again.
-function armBack(){
-  try{
-    while(_backDepth < BACK_BUFFER){
-      _reentry = true;
-      history.pushState({ff:1, d:_backDepth+1}, '');
-      _backDepth++;
+// Anchor a root entry so the FIRST back press has somewhere to land (state=null
+// signals "you tried to go back past the app").
+try{ history.replaceState({screen:'__root__'},''); }catch(e){}
+
+window.addEventListener('popstate', function(ev){
+  var target = ev.state && ev.state.screen;
+  _dbg('BACK -> ' + (target||'(root/null)'));
+
+  // Guard: leaving a live game requires confirmation.
+  if(UI.current==='screen-game' && isGameActive()){
+    if(!confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
+      // User chose to STAY. Re-push the game entry so we remain on it.
+      try{ history.pushState({screen:'screen-game'},''); }catch(e){}
+      return;
     }
-  }catch(e){}
-  _reentry = false;
-  _dbg('armed');
-}
+    // User is leaving the game -> go Home (and swallow this pop as the trip home).
+    UI.restore('screen-home');
+    return;
+  }
 
-// Fill the buffer as soon as the script runs.
-armBack();
-// And re-fill after full load (PWA launch sometimes resets history timing).
-window.addEventListener('load', function(){ _backDepth = 0; armBack(); });
+  if(!target || target==='__root__'){
+    // Back past the app's own screens.
+    if(UI.current==='screen-home'){
+      if(confirm('Log out of the app?')){ Auth.logout(); }
+      else { try{ history.pushState({screen:'screen-home'},''); }catch(e){} }
+    }else if(UI.current==='screen-auth'){
+      // On the login screen: let the browser leave normally by re-anchoring only if needed.
+      try{ history.pushState({screen:'screen-auth'},''); }catch(e){}
+    }else{
+      // Any other screen but no history target: fall back to Home.
+      UI.restore('screen-home');
+    }
+    return;
+  }
 
-window.addEventListener('popstate', function(){
-  // Ignore popstate events caused by our own pushState calls.
-  if(_reentry){ _reentry = false; return; }
-  // A genuine back press consumed one trap.
-  _backDepth = Math.max(0, _backDepth - 1);
-  _dbg('BACK pressed');
-  UI.handleBack();
-  // Top the buffer back up (async guard helps Android coalescing).
-  armBack();
-  setTimeout(armBack, 0);
+  // Normal case: render whatever screen the browser walked us back to.
+  UI.restore(target);
 });
 
 // ============================================================
