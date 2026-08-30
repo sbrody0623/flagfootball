@@ -119,6 +119,9 @@ h3{font-size:1rem;margin-bottom:6px}
       <div class="form-group"><label>Password</label><input type="password" id="login-pass" placeholder="Password"></div>
       <button class="btn btn-primary" onclick="Auth.login()">Log In</button>
       <div style="text-align:center;margin-top:8px">
+        <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showReset()">Forgot password?</span>
+      </div>
+      <div style="text-align:center;margin-top:6px">
         <span style="font-size:0.85rem;color:var(--muted)">New team? </span>
         <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showRegister()">Create Account</span>
       </div>
@@ -138,7 +141,33 @@ h3{font-size:1rem;margin-bottom:6px}
       <div class="form-group"><label>Team Name</label><input type="text" id="reg-team" placeholder="e.g. Thunder"></div>
       <div class="form-group"><label>Login Code (unique, for your team)</label><input type="text" id="reg-code" placeholder="e.g. thunder2026" autocapitalize="none"></div>
       <div class="form-group"><label>Password</label><input type="password" id="reg-pass" placeholder="Choose a password"></div>
+      <div class="form-group"><label>Security Question (to recover your password)</label>
+        <select id="reg-secq">
+          <option value="What is your team's mascot?">What is your team's mascot?</option>
+          <option value="What city does your team play in?">What city does your team play in?</option>
+          <option value="What is the head coach's last name?">What is the head coach's last name?</option>
+          <option value="What year was the team founded?">What year was the team founded?</option>
+          <option value="What is your home field's name?">What is your home field's name?</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Answer</label><input type="text" id="reg-seca" placeholder="Your answer" autocapitalize="none"></div>
       <button class="btn btn-success" onclick="Auth.register()">Create Team</button>
+      <div style="text-align:center;margin-top:8px">
+        <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showLogin()">← Back to Login</span>
+      </div>
+    </div>
+    <div id="auth-reset" class="hidden">
+      <h3>Reset Password</h3>
+      <div id="reset-step1">
+        <div class="form-group"><label>Team Login Code</label><input type="text" id="reset-code" placeholder="Your team's login code" autocapitalize="none"></div>
+        <button class="btn btn-primary" onclick="Auth.resetLookup()">Continue</button>
+      </div>
+      <div id="reset-step2" class="hidden">
+        <p style="font-size:0.9rem;font-weight:600;margin:4px 0" id="reset-question"></p>
+        <div class="form-group"><label>Answer</label><input type="text" id="reset-answer" placeholder="Your answer" autocapitalize="none"></div>
+        <div class="form-group"><label>New Password</label><input type="password" id="reset-newpass" placeholder="Choose a new password"></div>
+        <button class="btn btn-success" onclick="Auth.resetSubmit()">Set New Password</button>
+      </div>
       <div style="text-align:center;margin-top:8px">
         <span style="font-size:0.85rem;color:var(--primary);cursor:pointer;font-weight:600" onclick="Auth.showLogin()">← Back to Login</span>
       </div>
@@ -785,11 +814,45 @@ const UI={
 // AUTH
 // ============================================================
 const Auth={
-  showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden');
+  showLogin(){document.getElementById('auth-login').classList.remove('hidden');document.getElementById('auth-register').classList.add('hidden');document.getElementById('auth-reset').classList.add('hidden');
     // Reset the contact form back to its unsent state.
     const cf=document.getElementById('contact-form'),cs=document.getElementById('contact-sent');
     if(cf)cf.classList.remove('hidden'); if(cs)cs.classList.add('hidden');},
-  showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
+  showRegister(){document.getElementById('auth-login').classList.add('hidden');document.getElementById('auth-reset').classList.add('hidden');document.getElementById('auth-register').classList.remove('hidden')},
+  // Open the password-reset flow at step 1.
+  showReset(){
+    document.getElementById('auth-login').classList.add('hidden');
+    document.getElementById('auth-register').classList.add('hidden');
+    document.getElementById('auth-reset').classList.remove('hidden');
+    document.getElementById('reset-step1').classList.remove('hidden');
+    document.getElementById('reset-step2').classList.add('hidden');
+    document.getElementById('reset-code').value='';
+    document.getElementById('reset-answer').value='';
+    document.getElementById('reset-newpass').value='';
+  },
+  async resetLookup(){
+    const code=document.getElementById('reset-code').value.trim();
+    if(!code){UI.showError('auth-error','Enter your team login code');return}
+    try{
+      const data=await API.get('/reset/question?loginCode='+encodeURIComponent(code));
+      document.getElementById('reset-question').textContent=data.question;
+      document.getElementById('reset-step1').classList.add('hidden');
+      document.getElementById('reset-step2').classList.remove('hidden');
+    }catch(e){UI.showError('auth-error',e.message)}
+  },
+  async resetSubmit(){
+    const code=document.getElementById('reset-code').value.trim();
+    const answer=document.getElementById('reset-answer').value.trim();
+    const newPassword=document.getElementById('reset-newpass').value;
+    if(!answer||!newPassword){UI.showError('auth-error','Enter your answer and a new password');return}
+    if(newPassword.length<4){UI.showError('auth-error','New password must be at least 4 characters');return}
+    try{
+      await API.post('/reset/verify',{loginCode:code,answer,newPassword});
+      alert('✅ Password reset! Log in with your new password.');
+      Auth.showLogin();
+      document.getElementById('login-code').value=code;
+    }catch(e){UI.showError('auth-error',e.message)}
+  },
   async login(){
     const code=document.getElementById('login-code').value.trim();
     const pass=document.getElementById('login-pass').value;
@@ -805,9 +868,12 @@ const Auth={
     const team=document.getElementById('reg-team').value.trim();
     const code=document.getElementById('reg-code').value.trim();
     const pass=document.getElementById('reg-pass').value;
+    const secq=document.getElementById('reg-secq').value;
+    const seca=document.getElementById('reg-seca').value.trim();
     if(!team||!code||!pass){UI.showError('auth-error','Fill all fields');return}
+    if(!seca){UI.showError('auth-error','Answer the security question (for password recovery)');return}
     try{
-      const data=await API.post('/register',{teamName:team,loginCode:code,password:pass});
+      const data=await API.post('/register',{teamName:team,loginCode:code,password:pass,securityQuestion:secq,securityAnswer:seca});
       API.token=data.token;localStorage.setItem('ff_token',data.token);
       localStorage.setItem('ff_team_name',data.teamName);
       Auth.onLoggedIn(data.teamName);

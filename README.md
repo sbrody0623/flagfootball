@@ -46,6 +46,8 @@ create table if not exists teams (
   team_name    text not null,
   login_code   text unique not null,
   password_hash text not null,
+  security_question    text,
+  security_answer_hash text,
   created_at   timestamptz default now()
 );
 
@@ -111,6 +113,15 @@ create table if not exists contact_messages (
 ```
 
 > The `plays.players` JSONB column also carries a few app-managed keys — the quarter (`_quarter`), a sync-dedupe id (`_clientUid`), return yards, and an undo snapshot — so no schema migration is needed to change those.
+
+**Upgrading an existing database?** If your `teams` table predates the self-service password reset, add the two new columns:
+
+```sql
+alter table teams add column if not exists security_question    text;
+alter table teams add column if not exists security_answer_hash text;
+```
+
+Teams created before these columns existed simply won't have a security question — those users fall back to the "contact admin" form on the login screen.
 
 ### 2. Configure environment variables
 
@@ -179,6 +190,16 @@ If `ADMIN_KEY` is not set, the admin panel is fully disabled and all admin endpo
 The login screen has a **contact form** (name, email, message) for anyone who is locked out or needs help. Submitting it stores the message in the `contact_messages` table — no email service required. Read incoming requests in the admin panel's **Messages** tab.
 
 The panel never exposes password hashes, and the admin key is compared with a timing-safe check and never sent back to the browser. Rotate the key anytime by changing the Render variable.
+
+## Forgot Password (self-service)
+
+Teams set a **security question** and answer when they create their account. If they forget their password, they can reset it themselves from the login screen:
+
+1. Tap **Forgot password?**
+2. Enter the team login code — the app shows the team's security question.
+3. Answer the question and choose a new password.
+
+The answer is stored bcrypt-hashed and matched case-/whitespace-insensitively. A successful reset also signs out any existing logins. Teams created before this feature (no security question on file) fall back to the contact form / admin reset below.
 
 ## Resetting a Password Manually (SQL)
 

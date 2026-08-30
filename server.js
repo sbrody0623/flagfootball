@@ -134,18 +134,30 @@ function adminAuth(req, res, next) {
 // AUTH ROUTES
 // ============================================================
 
+// Normalize a security answer so matching is case-/whitespace-insensitive.
+function normAnswer(a) { return String(a || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+
 app.post('/api/register', async (req, res) => {
   try {
-    const { teamName, loginCode, password } = req.body;
+    const { teamName, loginCode, password, securityQuestion, securityAnswer } = req.body;
     if (!teamName || !loginCode || !password) return res.status(400).json({ error: 'Team name, login code, and password are required' });
     if (loginCode.length < 3) return res.status(400).json({ error: 'Login code must be at least 3 characters' });
     if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    if (!securityQuestion || !String(securityQuestion).trim()) return res.status(400).json({ error: 'A security question is required (for password recovery)' });
+    if (!securityAnswer || !normAnswer(securityAnswer)) return res.status(400).json({ error: 'A security answer is required (for password recovery)' });
 
     const existing = await supaGet('teams', `login_code=eq.${loginCode.toLowerCase()}&select=id`);
     if (existing && existing.length > 0) return res.status(400).json({ error: 'That login code is already taken.' });
 
     const hash = bcrypt.hashSync(password, 10);
-    const team = await supaInsert('teams', { team_name: teamName, login_code: loginCode.toLowerCase(), password_hash: hash });
+    const answerHash = bcrypt.hashSync(normAnswer(securityAnswer), 10);
+    const team = await supaInsert('teams', {
+      team_name: teamName,
+      login_code: loginCode.toLowerCase(),
+      password_hash: hash,
+      security_question: String(securityQuestion).trim().slice(0, 200),
+      security_answer_hash: answerHash
+    });
 
     const token = crypto.randomBytes(32).toString('hex');
     await supaInsert('sessions', { token, team_id: team.id });
@@ -178,6 +190,48 @@ app.post('/api/logout', authenticate, async (req, res) => {
     await supaDelete('sessions', `token=eq.${token}`);
     res.json({ ok: true });
   } catch (e) { res.json({ ok: true }); }
+});
+
+// ---- Self-service password reset (via security question) ----
+
+// Step 1: look up the security question for a login code.
+app.get('/api/reset/question', async (req, res) => {
+  try {
+    const loginCode = String(req.query.loginCode || '').toLowerCase();
+    if (!loginCode) return res.status(400).json({ error: 'Enter your team login code' });
+    const teams = await supaGet('teams', `login_code=eq.${loginCode}&select=security_question,security_answer_hash`);
+    if (!teams || teams.length === 0) return res.status(404).json({ error: 'No team found with that login code' });
+    const t = teams[0];
+    if (!t.security_question || !t.security_answer_hash) {
+      return res.status(409).json({ error: 'This account has no security question set. Please use the contact form below to reach the admin.' });
+    }
+    res.json({ question: t.security_question });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Step 2: verify the answer and set a new password.
+app.post('/api/reset/verify', async (req, res) => {
+  try {
+    const { loginCode, answer, newPassword } = req.body || {};
+    const code = String(loginCode || '').toLowerCase();
+    if (!code || !answer || !newPassword) return res.status(400).json({ error: 'All fields are required' });
+    if (String(newPassword).length < 4) return res.status(400).json({ error: 'New password must be at least 4 characters' });
+
+    const teams = await supaGet('teams', `login_code=eq.${code}`);
+    if (!teams || teams.length === 0) return res.status(404).json({ error: 'No team found with that login code' });
+    const t = teams[0];
+    if (!t.security_answer_hash) return res.status(409).json({ error: 'This account has no security question set. Please contact the admin.' });
+
+    if (!bcrypt.compareSync(normAnswer(answer), t.security_answer_hash)) {
+      return res.status(403).json({ error: 'That answer is incorrect.' });
+    }
+
+    const hash = bcrypt.hashSync(String(newPassword), 10);
+    await supaUpdate('teams', `id=eq.${t.id}`, { password_hash: hash });
+    // Sign out any existing sessions for safety.
+    try { await supaDelete('sessions', `team_id=eq.${t.id}`); } catch (e) {}
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/me', authenticate, async (req, res) => {
