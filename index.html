@@ -780,30 +780,16 @@ const UI={
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
-    if(id==='screen-auth'){
-      // Login screen (fresh load or logout). Build a 3-deep stack:
-      //   [__exit__, __root__, screen-auth]
-      // __exit__ is a permanent bottom sentinel so a back press can NEVER run the
-      // browser out of history (which would silently close the tab/app). Back on
-      // login lands on __root__, where we just re-arm (login is the bottom).
-      try{
-        history.replaceState({screen:'__exit__'},'');
-        history.pushState({screen:'__root__'},'');
-        history.pushState({screen:'screen-auth'},'');
-      }catch(e){}
-    }else if(id==='screen-home' && !this._restoring){
-      // Home is the app's base screen after login. Same 3-deep anchor:
-      //   [__exit__, __root__, screen-home]
-      // First BACK from home -> lands on __root__ -> logout confirm, with __exit__
-      // still beneath so the app never falls out from under us.
-      try{
-        history.replaceState({screen:'__exit__'},'');
-        history.pushState({screen:'__root__'},'');
-        history.pushState({screen:'screen-home'},'');
-      }catch(e){}
+    if(id==='screen-auth' || (id==='screen-home' && !this._restoring)){
+      // Base screens (login / home). Anchor a single history entry for this
+      // screen. We deliberately do NOT trap the back button here: on Home the
+      // hardware/browser BACK behaves normally (leaves the app), and users log
+      // out with the on-screen Logout button. This keeps behavior predictable
+      // across desktop and mobile instead of fighting the browser's history.
+      try{ history.replaceState({screen:id},''); }catch(e){}
     }else if(!this._restoring){
-      // Forward navigation: record this screen as a real history entry so BACK
-      // walks screens accurately. (When restoring in response to BACK, don't push.)
+      // Forward navigation within the app: record a real history entry so the
+      // back button walks screens (e.g. Summary -> History -> Dashboard -> Home).
       try{ history.pushState({screen:id},''); }catch(e){}
     }
     _dbg('show '+id);
@@ -3169,71 +3155,33 @@ function _dbg(msg){
   el.textContent = (line + '\n' + el.textContent).split('\n').slice(0,8).join('\n');
 }
 
-// Initial anchor before the app renders a screen. We keep TWO sentinels beneath
-// every app screen: __exit__ (permanent bottom, never navigated to) and __root__
-// ("you pressed back past the first screen"). Because __exit__ always sits below
-// __root__, a back press can never run the browser out of history and silently
-// close the tab/app — the classic failure we kept hitting.
-try{
-  history.replaceState({screen:'__exit__'},'');
-  history.pushState({screen:'__root__'},'');
-}catch(e){}
-
-// Put the pointer back ABOVE __root__ onto a real screen entry, so the next back
-// press lands on __root__ (our decision point) rather than escaping.
-function _armAbove(screen){
-  try{ history.pushState({screen:screen||'screen-home'},''); }catch(e){}
-  _dbg('armed above ['+(screen||'screen-home')+']');
-}
-
+// BACK button — SIMPLE, predictable behavior.
+// We DON'T trap the back button to force a logout confirm (that fought the
+// browser and was unreliable across desktop/mobile/forward-button). Instead:
+//   • Within the app, back walks screens (Summary -> History -> Dashboard -> Home)
+//     using the real history entries pushed by UI.show().
+//   • On Home/login, back does the normal browser thing (leaves the app).
+//     Users log out via the on-screen Logout button (always reliable).
+//   • The ONE guard we keep is leaving a LIVE game — that protects data.
 window.addEventListener('popstate', function(ev){
   var target = ev.state && ev.state.screen;
-  _dbg('BACK -> ' + (target||'(null)'));
+  _dbg('BACK -> ' + (target||'(none)'));
 
-  // --- Live game guard: leaving requires confirmation ---
+  // Live-game guard: confirm before leaving an in-progress game.
   if(UI.current==='screen-game' && isGameActive()){
-    if(!confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
-      // Stay: step forward onto a fresh screen entry so we sit above __root__.
-      _armAbove('screen-game');
-      return;
+    if(confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
+      UI.restore('screen-home');
+    }else{
+      // Stay in the game: re-push a game entry so this screen keeps the pointer.
+      try{ history.pushState({screen:'screen-game'},''); }catch(e){}
     }
-    UI.restore('screen-home');
-    _armAbove('screen-home');
     return;
   }
 
-  // --- Landed on __root__ = "tried to go back past the first app screen" ---
-  if(target==='__root__'){
-    if(UI.current==='screen-auth'){
-      _armAbove('screen-auth');   // login is the bottom; back does nothing
-      return;
-    }
-    if(UI.current==='screen-admin'){
-      Admin.exit();
-      return;
-    }
-    // Normally Home -> offer logout. Re-arm ABOVE root FIRST (so we're never left
-    // sitting on root), then ask. __exit__ still sits beneath, so even if this
-    // handler is skipped next time, the app can't fall out.
-    var stay=(UI.current && UI.current!=='__root__' && UI.current!=='__exit__') ? UI.current : 'screen-home';
-    _armAbove(stay);
-    if(confirm('Log out of the app?')){ Auth.logout(); }
-    return;
-  }
-
-  // --- Somehow reached the very bottom sentinel: rebuild the whole anchor ---
-  if(!target || target==='__exit__'){
-    try{
-      history.replaceState({screen:'__exit__'},'');
-      history.pushState({screen:'__root__'},'');
-      history.pushState({screen:(UI.current&&UI.current!=='__exit__'&&UI.current!=='__root__')?UI.current:'screen-home'},'');
-    }catch(e){}
-    _dbg('rebuilt anchor');
-    return;
-  }
-
-  // --- Normal case: render whatever screen the browser walked back to ---
-  UI.restore(target);
+  // Otherwise, render whatever screen the browser walked back to. If there's no
+  // known target (back past the app's first screen), let the browser proceed
+  // normally (it will leave the app) — no interference.
+  if(target){ UI.restore(target); }
 });
 
 // ============================================================
