@@ -142,9 +142,33 @@ A paid instance is recommended so the service doesn't cold-start (spin down) bet
 5. **Start a game** — tap buttons to record plays in real time from your phone.
 6. **Review** — download the box score and browse game history.
 
-## Resetting a Password (admin)
+## Admin Panel
 
-There is no self-service "forgot password" flow. If someone forgets their password, you can reset it directly from the Supabase **SQL Editor**. Passwords are bcrypt-hashed, so you can't type a plaintext value into the table — use one of the options below.
+There is a built-in admin panel for managing team accounts (list teams, reset passwords, delete teams). It is protected by a secret key that only you know.
+
+### Enable it
+
+Set an `ADMIN_KEY` environment variable on the server (in the Render dashboard) to any long, random string:
+
+```
+ADMIN_KEY=some-long-random-secret-value
+```
+
+If `ADMIN_KEY` is not set, the admin panel is fully disabled and all admin endpoints refuse requests.
+
+### Use it
+
+1. Visit **`/admin`** on your deployed site (e.g. `https://your-app.onrender.com/admin`).
+2. Enter your `ADMIN_KEY` to unlock. This grants a temporary admin session (expires after 1 hour).
+3. From there you can, for each team:
+   - **🔑 Reset Password** — type a new password; it's saved (bcrypt-hashed) and the team's existing logins are signed out. Give the new password to the team.
+   - **🗑️ Delete Team** — permanently removes the team and all of its seasons, games, and stats (you must type the team name to confirm).
+
+The panel never exposes password hashes, and the admin key is compared with a timing-safe check and never sent back to the browser. Rotate the key anytime by changing the Render variable.
+
+## Resetting a Password Manually (SQL)
+
+If you'd rather not use the admin panel (or `ADMIN_KEY` isn't set), you can reset a password directly from the Supabase **SQL Editor**. Passwords are bcrypt-hashed, so you can't type a plaintext value into the table — use one of the options below.
 
 First, find the team's login code:
 
