@@ -781,13 +781,26 @@ const UI={
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
     if(id==='screen-auth'){
-      // Landing on the login screen (fresh load or logout): WIPE the back stack
-      // so there is nothing to go back through. Re-anchor a single root entry.
-      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-auth'},''); }catch(e){}
+      // Login screen (fresh load or logout). Build a 3-deep stack:
+      //   [__exit__, __root__, screen-auth]
+      // __exit__ is a permanent bottom sentinel so a back press can NEVER run the
+      // browser out of history (which would silently close the tab/app). Back on
+      // login lands on __root__, where we just re-arm (login is the bottom).
+      try{
+        history.replaceState({screen:'__exit__'},'');
+        history.pushState({screen:'__root__'},'');
+        history.pushState({screen:'screen-auth'},'');
+      }catch(e){}
     }else if(id==='screen-home' && !this._restoring){
-      // Home is the app's base screen after login. Reset the stack so it sits
-      // directly on the root -> first BACK from home hits root -> logout confirm.
-      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-home'},''); }catch(e){}
+      // Home is the app's base screen after login. Same 3-deep anchor:
+      //   [__exit__, __root__, screen-home]
+      // First BACK from home -> lands on __root__ -> logout confirm, with __exit__
+      // still beneath so the app never falls out from under us.
+      try{
+        history.replaceState({screen:'__exit__'},'');
+        history.pushState({screen:'__root__'},'');
+        history.pushState({screen:'screen-home'},'');
+      }catch(e){}
     }else if(!this._restoring){
       // Forward navigation: record this screen as a real history entry so BACK
       // walks screens accurately. (When restoring in response to BACK, don't push.)
@@ -3156,10 +3169,22 @@ function _dbg(msg){
   el.textContent = (line + '\n' + el.textContent).split('\n').slice(0,8).join('\n');
 }
 
-// Anchor a ROOT entry that always sits UNDER the app. A back press that lands
-// here means "user tried to go back past the app's first screen". We keep the
-// pointer pinned here and decide what to do based on the screen we're on.
-try{ history.replaceState({screen:'__root__'},''); }catch(e){}
+// Initial anchor before the app renders a screen. We keep TWO sentinels beneath
+// every app screen: __exit__ (permanent bottom, never navigated to) and __root__
+// ("you pressed back past the first screen"). Because __exit__ always sits below
+// __root__, a back press can never run the browser out of history and silently
+// close the tab/app — the classic failure we kept hitting.
+try{
+  history.replaceState({screen:'__exit__'},'');
+  history.pushState({screen:'__root__'},'');
+}catch(e){}
+
+// Put the pointer back ABOVE __root__ onto a real screen entry, so the next back
+// press lands on __root__ (our decision point) rather than escaping.
+function _armAbove(screen){
+  try{ history.pushState({screen:screen||'screen-home'},''); }catch(e){}
+  _dbg('armed above ['+(screen||'screen-home')+']');
+}
 
 window.addEventListener('popstate', function(ev){
   var target = ev.state && ev.state.screen;
@@ -3168,45 +3193,42 @@ window.addEventListener('popstate', function(ev){
   // --- Live game guard: leaving requires confirmation ---
   if(UI.current==='screen-game' && isGameActive()){
     if(!confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
-      // Stay in the game. Re-assert a [root, screen-game] pair from wherever the
-      // pointer landed, so a repeated back press keeps re-asking (never escapes).
-      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-game'},''); }catch(e){}
+      // Stay: step forward onto a fresh screen entry so we sit above __root__.
+      _armAbove('screen-game');
       return;
     }
-    // Leaving -> go Home and anchor a fresh [root, screen-home] pair.
     UI.restore('screen-home');
-    try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-home'},''); }catch(e){}
+    _armAbove('screen-home');
     return;
   }
 
-  // --- Reached the ROOT (tried to go back past the first app screen) ---
-  if(!target || target==='__root__'){
+  // --- Landed on __root__ = "tried to go back past the first app screen" ---
+  if(target==='__root__'){
     if(UI.current==='screen-auth'){
-      // On login: this is the true bottom. Pin here; do NOT let the app exit
-      // into stale forward history. (Back does nothing on the login screen.)
-      try{ history.pushState({screen:'screen-auth'},''); }catch(e){}
+      _armAbove('screen-auth');   // login is the bottom; back does nothing
       return;
     }
     if(UI.current==='screen-admin'){
-      // On the admin panel: back leaves admin and returns to the normal app.
       Admin.exit();
       return;
     }
-    // Anywhere else (normally Home) -> offer logout.
-    // The pointer is currently ON the root entry. Whatever the user chooses, we
-    // must leave a fresh [root, stay] pair so the NEXT back press hits this same
-    // branch again (instead of escaping the app). The previous version pushed a
-    // single entry BEFORE the confirm, which left the stack one short after a
-    // Cancel — so the 2nd back press fell through and closed the app.
-    var stay=(UI.current && UI.current!=='__root__') ? UI.current : 'screen-home';
-    var logout=confirm('Log out of the app?');
-    if(logout){ Auth.logout(); return; }
-    // Cancelled — rebuild the anchor. We're sitting on the root entry now:
-    // replace it as root, then push `stay` so we're back one level above root.
+    // Normally Home -> offer logout. Re-arm ABOVE root FIRST (so we're never left
+    // sitting on root), then ask. __exit__ still sits beneath, so even if this
+    // handler is skipped next time, the app can't fall out.
+    var stay=(UI.current && UI.current!=='__root__' && UI.current!=='__exit__') ? UI.current : 'screen-home';
+    _armAbove(stay);
+    if(confirm('Log out of the app?')){ Auth.logout(); }
+    return;
+  }
+
+  // --- Somehow reached the very bottom sentinel: rebuild the whole anchor ---
+  if(!target || target==='__exit__'){
     try{
-      history.replaceState({screen:'__root__'},'');
-      history.pushState({screen:stay},'');
+      history.replaceState({screen:'__exit__'},'');
+      history.pushState({screen:'__root__'},'');
+      history.pushState({screen:(UI.current&&UI.current!=='__exit__'&&UI.current!=='__root__')?UI.current:'screen-home'},'');
     }catch(e){}
+    _dbg('rebuilt anchor');
     return;
   }
 
