@@ -142,6 +142,49 @@ A paid instance is recommended so the service doesn't cold-start (spin down) bet
 5. **Start a game** — tap buttons to record plays in real time from your phone.
 6. **Review** — download the box score and browse game history.
 
+## Resetting a Password (admin)
+
+There is no self-service "forgot password" flow. If someone forgets their password, you can reset it directly from the Supabase **SQL Editor**. Passwords are bcrypt-hashed, so you can't type a plaintext value into the table — use one of the options below.
+
+First, find the team's login code:
+
+```sql
+select id, team_name, login_code from teams;
+```
+
+### Option A — Reset entirely inside Supabase (recommended)
+
+Enable the `pgcrypto` extension once:
+
+```sql
+create extension if not exists pgcrypto;
+```
+
+Then set a new password (replace the password and login code):
+
+```sql
+update teams
+set password_hash = crypt('newpass123', gen_salt('bf'))
+where login_code = 'their-login-code';
+```
+
+`gen_salt('bf')` produces a standard bcrypt hash that the server's `bcryptjs` verifies correctly. Give the person their new password and they can log in.
+
+### Option B — Generate the hash yourself
+
+Generate a bcrypt hash locally with the same library the server uses:
+
+```bash
+node -e "console.log(require('bcryptjs').hashSync('newpass123', 10))"
+```
+
+Copy the output (it starts with `$2a$10$…`) and paste it in:
+
+```sql
+update teams set password_hash = '$2a$10$...paste-hash-here...'
+where login_code = 'their-login-code';
+```
+
 ## Offline Support
 
 The app is built to survive losing signal mid-game (e.g. a field in a dead zone):
