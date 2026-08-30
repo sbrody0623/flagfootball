@@ -517,10 +517,17 @@ const UI={
     document.querySelectorAll('[id^="screen-"]').forEach(e=>e.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     this.current=id;
-    // Only push a new history entry for FORWARD navigation. When we're restoring
-    // a screen because the user pressed back, we must NOT push (that would fight
-    // the browser and strand them).
-    if(!this._restoring){
+    if(id==='screen-auth'){
+      // Landing on the login screen (fresh load or logout): WIPE the back stack
+      // so there is nothing to go back through. Re-anchor a single root entry.
+      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-auth'},''); }catch(e){}
+    }else if(id==='screen-home' && !this._restoring){
+      // Home is the app's base screen after login. Reset the stack so it sits
+      // directly on the root -> first BACK from home hits root -> logout confirm.
+      try{ history.replaceState({screen:'__root__'},''); history.pushState({screen:'screen-home'},''); }catch(e){}
+    }else if(!this._restoring){
+      // Forward navigation: record this screen as a real history entry so BACK
+      // walks screens accurately. (When restoring in response to BACK, don't push.)
       try{ history.pushState({screen:id},''); }catch(e){}
     }
     _dbg('show '+id);
@@ -2576,42 +2583,43 @@ function _dbg(msg){
   el.textContent = (line + '\n' + el.textContent).split('\n').slice(0,8).join('\n');
 }
 
-// Anchor a root entry so the FIRST back press has somewhere to land (state=null
-// signals "you tried to go back past the app").
+// Anchor a ROOT entry that always sits UNDER the app. A back press that lands
+// here means "user tried to go back past the app's first screen". We keep the
+// pointer pinned here and decide what to do based on the screen we're on.
 try{ history.replaceState({screen:'__root__'},''); }catch(e){}
 
 window.addEventListener('popstate', function(ev){
   var target = ev.state && ev.state.screen;
-  _dbg('BACK -> ' + (target||'(root/null)'));
+  _dbg('BACK -> ' + (target||'(null)'));
 
-  // Guard: leaving a live game requires confirmation.
+  // --- Live game guard: leaving requires confirmation ---
   if(UI.current==='screen-game' && isGameActive()){
     if(!confirm('Leave the game? Your progress is saved — you can Resume from Home.')){
-      // User chose to STAY. Re-push the game entry so we remain on it.
-      try{ history.pushState({screen:'screen-game'},''); }catch(e){}
+      try{ history.pushState({screen:'screen-game'},''); }catch(e){}   // stay
       return;
     }
-    // User is leaving the game -> go Home (and swallow this pop as the trip home).
     UI.restore('screen-home');
+    // re-anchor so home has an entry beneath it again
+    try{ history.pushState({screen:'screen-home'},''); }catch(e){}
     return;
   }
 
+  // --- Reached the ROOT (tried to go back past the first app screen) ---
   if(!target || target==='__root__'){
-    // Back past the app's own screens.
-    if(UI.current==='screen-home'){
-      if(confirm('Log out of the app?')){ Auth.logout(); }
-      else { try{ history.pushState({screen:'screen-home'},''); }catch(e){} }
-    }else if(UI.current==='screen-auth'){
-      // On the login screen: let the browser leave normally by re-anchoring only if needed.
+    if(UI.current==='screen-auth'){
+      // On login: this is the true bottom. Pin here; do NOT let the app exit
+      // into stale forward history. (Back does nothing on the login screen.)
       try{ history.pushState({screen:'screen-auth'},''); }catch(e){}
-    }else{
-      // Any other screen but no history target: fall back to Home.
-      UI.restore('screen-home');
+      return;
     }
+    // Anywhere else (normally Home) -> offer logout, and PIN the pointer so the
+    // app never falls out from under us regardless of the user's choice.
+    try{ history.pushState({screen:UI.current},''); }catch(e){}
+    if(confirm('Log out of the app?')){ Auth.logout(); }
     return;
   }
 
-  // Normal case: render whatever screen the browser walked us back to.
+  // --- Normal case: render whatever screen the browser walked back to ---
   UI.restore(target);
 });
 
