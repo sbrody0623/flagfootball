@@ -188,6 +188,24 @@ h3{font-size:1rem;margin-bottom:6px}
   </div>
   <h2>Seasons</h2>
   <div id="season-list-el"></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="cursor:pointer" onclick="Account.toggle()">🔐 Account Security <span style="font-size:0.8rem;color:var(--muted);font-weight:400">(tap to expand)</span></h3>
+    <div id="account-sec-body" class="hidden">
+      <p id="secq-status" style="font-size:0.85rem;color:var(--muted);margin:4px 0 10px"></p>
+      <div class="form-group"><label>Security Question (for password recovery)</label>
+        <select id="secq-question">
+          <option value="What is your team's mascot?">What is your team's mascot?</option>
+          <option value="What city does your team play in?">What city does your team play in?</option>
+          <option value="What is the head coach's last name?">What is the head coach's last name?</option>
+          <option value="What year was the team founded?">What year was the team founded?</option>
+          <option value="What is your home field's name?">What is your home field's name?</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Answer</label><input type="text" id="secq-answer" placeholder="Your answer" autocapitalize="none"></div>
+      <button class="btn btn-success" onclick="Account.saveSecurityQuestion()">Save Security Question</button>
+    </div>
+  </div>
 </div>
 
 <!-- CREATE SEASON -->
@@ -934,6 +952,47 @@ const Auth={
       const me=await API.get('/me');
       Auth.onLoggedIn(me.team_name);
     }catch(e){API.token=null;localStorage.removeItem('ff_token');UI.show('screen-auth')}
+  }
+};
+
+// ============================================================
+// ACCOUNT (security question management from inside the app)
+// ============================================================
+const Account={
+  _open:false,
+  toggle(){
+    this._open=!this._open;
+    document.getElementById('account-sec-body').classList.toggle('hidden',!this._open);
+    if(this._open)this.refresh();
+  },
+  // Load current status (is a security question set, and which one).
+  async refresh(){
+    const status=document.getElementById('secq-status');
+    status.textContent='Checking…';
+    try{
+      const me=await API.get('/me');
+      if(me.hasSecurityQuestion){
+        status.textContent='✅ A security question is set. You can update it below.';
+        if(me.security_question){
+          const sel=document.getElementById('secq-question');
+          // Select the matching preset if it exists.
+          for(const opt of sel.options){ if(opt.value===me.security_question){sel.value=me.security_question;break;} }
+        }
+      }else{
+        status.textContent='⚠️ No security question set. Add one so you can reset your own password if you forget it.';
+      }
+    }catch(e){status.textContent='Could not load account status.';}
+  },
+  async saveSecurityQuestion(){
+    const question=document.getElementById('secq-question').value;
+    const answer=document.getElementById('secq-answer').value.trim();
+    if(!answer){alert('Enter an answer for the security question.');return}
+    try{
+      await API.post('/security-question',{question,answer});
+      document.getElementById('secq-answer').value='';
+      alert('✅ Security question saved. You can now reset your password from the login screen if you forget it.');
+      this.refresh();
+    }catch(e){alert('Error: '+(e.message||'Could not save.'));}
   }
 };
 

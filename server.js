@@ -236,8 +236,28 @@ app.post('/api/reset/verify', async (req, res) => {
 
 app.get('/api/me', authenticate, async (req, res) => {
   try {
-    const teams = await supaGet('teams', `id=eq.${req.teamId}&select=id,team_name,login_code`);
-    res.json(teams[0]);
+    const teams = await supaGet('teams', `id=eq.${req.teamId}&select=id,team_name,login_code,security_question`);
+    const t = teams[0] || {};
+    res.json({
+      id: t.id, team_name: t.team_name, login_code: t.login_code,
+      hasSecurityQuestion: !!(t.security_question),
+      security_question: t.security_question || null
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set/update the logged-in team's security question + answer (for self-service reset).
+app.post('/api/security-question', authenticate, async (req, res) => {
+  try {
+    const { question, answer } = req.body || {};
+    if (!question || !String(question).trim()) return res.status(400).json({ error: 'Choose a security question' });
+    if (!answer || !normAnswer(answer)) return res.status(400).json({ error: 'Enter an answer' });
+    const answerHash = bcrypt.hashSync(normAnswer(answer), 10);
+    await supaUpdate('teams', `id=eq.${req.teamId}`, {
+      security_question: String(question).trim().slice(0, 200),
+      security_answer_hash: answerHash
+    });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

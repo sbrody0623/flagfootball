@@ -199,7 +199,9 @@ Teams set a **security question** and answer when they create their account. If 
 2. Enter the team login code — the app shows the team's security question.
 3. Answer the question and choose a new password.
 
-The answer is stored bcrypt-hashed and matched case-/whitespace-insensitively. A successful reset also signs out any existing logins. Teams created before this feature (no security question on file) fall back to the contact form / admin reset below.
+The answer is stored bcrypt-hashed and matched case-/whitespace-insensitively. A successful reset also signs out any existing logins.
+
+**Adding a security question to an existing account:** teams created before this feature (or who skipped it) can add one at any time while logged in — open the **🔐 Account Security** card on the home screen, pick a question, enter an answer, and save. Until a question is set, those users fall back to the contact form / admin reset below.
 
 ## Resetting a Password Manually (SQL)
 
