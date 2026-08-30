@@ -144,20 +144,14 @@ h3{font-size:1rem;margin-bottom:6px}
   <div class="card" id="resume-cache-card" class="hidden"></div>
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="Seasons.showCreate()">+ New Season</button>
-    <button class="btn btn-outline" onclick="Seasons.loadList()">View Seasons</button>
   </div>
-</div>
-
-<!-- SEASON LIST -->
-<div id="screen-seasons" class="hidden">
-  <span class="nav-back" onclick="UI.show('screen-home')">← Home</span>
   <h2>Seasons</h2>
   <div id="season-list-el"></div>
 </div>
 
 <!-- CREATE SEASON -->
 <div id="screen-create-season" class="hidden">
-  <span class="nav-back" onclick="UI.show('screen-home')">← Back</span>
+  <span class="nav-back" onclick="UI.goHome()">← Back</span>
   <h2>New Season</h2>
   <div class="card">
     <div class="form-group"><label>Season Name</label><input type="text" id="inp-sname" placeholder="e.g. Fall 2026"></div>
@@ -167,7 +161,7 @@ h3{font-size:1rem;margin-bottom:6px}
 
 <!-- SEASON DASHBOARD -->
 <div id="screen-dash" class="hidden">
-  <span class="nav-back" onclick="UI.show('screen-home')">← Home</span>
+  <span class="nav-back" onclick="UI.goHome()">← Home</span>
   <h2 id="dash-title"></h2>
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="Games.showNew()">🏈 Start New Game</button>
@@ -533,9 +527,8 @@ const UI={
       case 'screen-players':      Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-rules':        Seasons.showDash();  break;      // → Season Dashboard
       case 'screen-new-game':     Seasons.showDash();  break;      // → Season Dashboard
-      case 'screen-dash':         Seasons.loadList();  break;      // → Seasons list
-      case 'screen-create-season':Seasons.loadList();  break;      // → Seasons list
-      case 'screen-seasons':      this.goHome();       break;      // → Home
+      case 'screen-dash':         this.goHome();       break;      // → Home (which lists seasons)
+      case 'screen-create-season':this.goHome();       break;      // → Home
       case 'screen-home':         if(confirm('Log out of the app?'))Auth.logout(); break;
       default: /* auth screen — stay put */ break;
     }
@@ -579,6 +572,7 @@ const Auth={
     cacheCard.classList.add('hidden');
     cacheCard.innerHTML='';
     Auth.checkActiveGame(teamName);
+    Seasons.loadList();     // render the seasons list on the home screen
     UI.show('screen-home');
   },
   async checkActiveGame(teamName){
@@ -640,7 +634,7 @@ const Seasons={
     }catch(e){alert(e.message)}
   },
   async loadList(){
-    UI.show('screen-seasons');
+    // Renders the seasons list into the home screen (no separate screen)
     try{
       const seasons=await API.get('/seasons');
       const el=document.getElementById('season-list-el');
