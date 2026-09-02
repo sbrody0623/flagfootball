@@ -1037,8 +1037,10 @@ const Watch={
       // Status line: while a play is animating, show the PRE-snap state; when
       // static (paused/stepped/at end), show the state AFTER the play completed.
       this._statusLine(animate?gs:this._stateAfterPlay(r,r.idx))+
-      // Field: when animating, draw with ball at the play's START and its own path hidden.
-      this._unifiedField(gs, r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
+      // Field: when animating, draw from the PRE-snap state (ball at start, path
+      // hidden). When static, draw from the AFTER state so the first-down line +
+      // ball sit at the post-play spot, matching the status line.
+      this._unifiedField(animate?gs:this._stateAfterPlay(r,r.idx), r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
       `<h3 style="margin:10px 0 4px">This Play</h3>`+
       `<div id="wthisplay">${animate?'<div class="wplay" style="color:var(--muted)">🏈 The play is developing…</div>':(cur?this._playCard(cur):'<div class="wplay">—</div>')}</div>`;
 
@@ -1068,12 +1070,14 @@ const Watch={
       // play ends rather than lingering on the pre-snap situation).
       clearTimeout(this._revealTimer);
       this._revealTimer=setTimeout(()=>{
-        this._paintStaticField(gs,r.plays,r.idx);
+        const after=this._stateAfterPlay(r,r.idx);
+        // Repaint the field using the AFTER state so the first-down line + ball
+        // move to the new spot in sync with the down & distance text.
+        this._paintStaticField(after,r.plays,r.idx);
         const tp=document.getElementById('wthisplay');
         if(tp&&cur)tp.innerHTML=this._playCard(cur);
         const st=document.getElementById('wstatus');
-        if(st){ const after=this._stateAfterPlay(r,r.idx);
-          st.outerHTML=this._statusLine(after); }
+        if(st){ st.outerHTML=this._statusLine(after); }
       },DUR+300);
     }
   },
