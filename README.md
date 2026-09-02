@@ -131,7 +131,7 @@ The server reads two environment variables:
 | Variable | Description |
 |----------|-------------|
 | `SUPABASE_URL` | Your project URL, e.g. `https://abcdefgh.supabase.co` |
-| `SUPABASE_KEY` | The Supabase **service_role** key (server-side only — keep it secret) |
+| `SUPABASE_KEY` | The Supabase **Secret key** (`sb_secret_…`, formerly the **service_role** key). It bypasses Row Level Security, so it is **server-side only — never expose it or commit it**. Do NOT use the Publishable/anon key here: with RLS enabled (see [Security](#security--row-level-security)) it will be blocked and logins will fail. |
 | `PORT` | (optional) Port to listen on. Defaults to `3000`. |
 
 ### 3. Install & run locally
@@ -153,6 +153,40 @@ This app is deployed on [Render](https://render.com):
 4. Render auto-deploys on every push to `main`.
 
 A paid instance is recommended so the service doesn't cold-start (spin down) between uses.
+
+## Security / Row Level Security
+
+All data lives in Supabase, which exposes a REST API on your project URL. To stop anyone with that URL from reading or modifying your data directly (bypassing the app), **Row Level Security (RLS) must be enabled on every table**.
+
+How the pieces fit together:
+
+- The **server** talks to Supabase using the **Secret key** (`sb_secret_…` / service_role), which **bypasses RLS**. That's why the app keeps working with RLS on.
+- The **Publishable/anon key** is subject to RLS. The frontend never talks to Supabase directly (it only talks to this server), so the anon key isn't used anywhere — and with RLS on, any direct anon API call is denied.
+- ⚠️ If you ever set `SUPABASE_KEY` to the Publishable/anon key while RLS is enabled, **all queries fail and logins break.** Use the Secret key.
+
+**Enable RLS (run once in the Supabase SQL Editor):**
+
+```sql
+-- Turn on RLS for every table
+alter table teams            enable row level security;
+alter table sessions         enable row level security;
+alter table seasons          enable row level security;
+alter table players          enable row level security;
+alter table games            enable row level security;
+alter table plays            enable row level security;
+alter table contact_messages enable row level security;
+
+-- Explicit "deny all" for public roles (the server's Secret key still bypasses this)
+create policy "deny all direct access" on teams            as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on sessions         as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on seasons          as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on players          as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on games            as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on plays            as restrictive for all to anon, authenticated using (false);
+create policy "deny all direct access" on contact_messages as restrictive for all to anon, authenticated using (false);
+```
+
+> If you add any new tables later, enable RLS on them too — otherwise Supabase's security advisor will (correctly) flag them as publicly accessible.
 
 ## How It Works
 
