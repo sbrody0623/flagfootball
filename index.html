@@ -1141,8 +1141,18 @@ const Watch={
   _driveWindow(plays,upto){
     if(!plays||!plays.length||upto<0)return [];
     const poss=(i)=>plays[i].possession||'offense';
+    const type=(i)=>(plays[i].play_type||plays[i].playType||'').toLowerCase();
+    // An onside kick starts a BRAND-NEW series even though the same team keeps
+    // the ball (trailing team scored, then re-kicked to itself). So it's a hard
+    // drive boundary: if the current play IS the onside, the drive starts here;
+    // otherwise walk back but STOP as soon as the previous play was an onside.
     let start=upto;
-    while(start>0 && poss(start-1)===poss(upto) && (plays[start-1].play_type||plays[start-1].playType)!=='quarter'){ start--; }
+    if(type(upto)!=='onside'){
+      while(start>0
+            && poss(start-1)===poss(upto)
+            && type(start-1)!=='quarter'
+            && type(start-1)!=='onside'){ start--; }
+    }
     let drive=[];
     for(let i=start;i<=upto;i++){ if(this._isFieldPlay(plays[i]))drive.push({p:plays[i],idx:i}); }
     if(drive.length>8)drive=drive.slice(drive.length-8);
