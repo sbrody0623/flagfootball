@@ -107,7 +107,7 @@ h3{font-size:1rem;margin-bottom:6px}
   background:linear-gradient(90deg,#2e7d32,#388e3c 50%,#2e7d32)}
 .wfieldwrap svg{display:block;width:100%;height:auto}
 .wfieldwrap .ez-lbl{fill:#fff;font-size:3px;font-weight:700;opacity:0.9}
-.wfieldwrap .ez-g{fill:#fff;font-size:4px;font-weight:800}
+.wfieldwrap .ez-g{fill:#fff;font-size:2.8px;font-weight:800}
 .wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
 .wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
@@ -1221,15 +1221,18 @@ const Watch={
     const rowY=(li)=> rows<=1 ? (botY) : (topY + (botY-topY)*(li/(rows-1)));
 
     let svg=`<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none">`;
-    // Solid end-zone bands (our = red, opp = blue) with a "G" goal marker.
+    // Solid end-zone bands (our = red, opp = blue) labeled OUR / OPP.
     svg+=`<rect x="0" y="0" width="8" height="${VH}" fill="#b71c1c"/>`;
     svg+=`<rect x="92" y="0" width="8" height="${VH}" fill="#0d47a1"/>`;
-    // goal lines (solid white) at each end-zone edge
+    svg+=`<text x="4" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(-90 4 ${VH/2})">OUR</text>`;
+    svg+=`<text x="96" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(90 96 ${VH/2})">OPP</text>`;
+    // Goal lines (solid white) at the end-zone edges, each marked with a "G".
     svg+=`<line x1="8" y1="0" x2="8" y2="${VH}" stroke="#fff" stroke-width="0.6"/>`;
     svg+=`<line x1="92" y1="0" x2="92" y2="${VH}" stroke="#fff" stroke-width="0.6"/>`;
-    // "G" markers on the goal lines
-    svg+=`<text x="4" y="${VH/2+1.2}" text-anchor="middle" class="ez-g">G</text>`;
-    svg+=`<text x="96" y="${VH/2+1.2}" text-anchor="middle" class="ez-g">G</text>`;
+    svg+=`<text x="9.6" y="4" text-anchor="middle" class="ez-g">G</text>`;
+    svg+=`<text x="9.6" y="${VH-1}" text-anchor="middle" class="ez-g">G</text>`;
+    svg+=`<text x="90.4" y="4" text-anchor="middle" class="ez-g">G</text>`;
+    svg+=`<text x="90.4" y="${VH-1}" text-anchor="middle" class="ez-g">G</text>`;
     for(let f=0.1; f<0.95; f+=0.1){
       const xx=x(fl*f);
       svg+=`<line x1="${xx}" y1="0" x2="${xx}" y2="${VH}" stroke="rgba(255,255,255,0.28)" stroke-width="0.25"/>`;
