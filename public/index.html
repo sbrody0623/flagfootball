@@ -104,9 +104,10 @@ h3{font-size:1rem;margin-bottom:6px}
 @media(max-width:400px){.container{padding:6px}.play-btn{padding:14px 8px;font-size:0.9rem}.form-row{flex-direction:column;gap:0}}
 /* ---- Spectator / Watch field (single unified field with play paths) ---- */
 .wfieldwrap{position:relative;width:100%;margin:8px 0;border-radius:8px;overflow:hidden;border:2px solid #1b5e20;
-  background:linear-gradient(90deg,#c62828 0%,#2e7d32 8%,#388e3c 50%,#2e7d32 92%,#1565c0 100%)}
+  background:linear-gradient(90deg,#2e7d32,#388e3c 50%,#2e7d32)}
 .wfieldwrap svg{display:block;width:100%;height:auto}
 .wfieldwrap .ez-lbl{fill:#fff;font-size:3px;font-weight:700;opacity:0.9}
+.wfieldwrap .ez-g{fill:#fff;font-size:4px;font-weight:800}
 .wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
 .wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
@@ -1012,7 +1013,9 @@ const Watch={
         <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(1)">Next ⏭</button>
         <div style="font-size:0.8rem;color:var(--muted);margin-top:6px">Play ${r.idx+1} of ${r.plays.length}${atEnd?' · End':''} · auto-advances every 10s</div>
       </div>`+
-      this._statusLine(gs)+
+      // Status line: while a play is animating, show the PRE-snap state; when
+      // static (paused/stepped/at end), show the state AFTER the play completed.
+      this._statusLine(animate?gs:this._stateAfterPlay(r,r.idx))+
       // Field: when animating, draw with ball at the play's START and its own path hidden.
       this._unifiedField(gs, r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
       `<h3 style="margin:10px 0 4px">This Play</h3>`+
@@ -1039,12 +1042,17 @@ const Watch={
         if(k<1 && this._replay && this._replay.idx===r.idx){ requestAnimationFrame(tick); }
       };
       requestAnimationFrame(tick);
-      // After the glide, draw the path + reveal the result text.
+      // After the glide, draw the path, reveal the result text, AND update the
+      // down & distance to the state AFTER the play (so it changes the moment the
+      // play ends rather than lingering on the pre-snap situation).
       clearTimeout(this._revealTimer);
       this._revealTimer=setTimeout(()=>{
         this._paintStaticField(gs,r.plays,r.idx);
         const tp=document.getElementById('wthisplay');
         if(tp&&cur)tp.innerHTML=this._playCard(cur);
+        const st=document.getElementById('wstatus');
+        if(st){ const after=this._stateAfterPlay(r,r.idx);
+          st.outerHTML=this._statusLine(after); }
       },DUR+300);
     }
   },
@@ -1112,8 +1120,25 @@ const Watch={
     const fl=gs.fieldLength||this.fieldLen;
     const toGo=(gs.firstDownLine!=null&&gs.firstDownLine>=fl)?'Goal':(gs.firstDownLine!=null?(gs.firstDownLine-gs.ballPos):'');
     const poss=gs.possession==='offense'?'🏈 Our Ball':'🛡️ Their Ball';
-    return `<div class="card" style="display:flex;justify-content:space-between;font-size:0.9rem;padding:8px 12px">
+    return `<div id="wstatus" class="card" style="display:flex;justify-content:space-between;font-size:0.9rem;padding:8px 12px">
       <span><strong>${qlbl}</strong></span><span>${dn}${toGo!==''?' & '+toGo:''}</span><span>${poss}</span></div>`;
+  },
+  // State AFTER play index `idx` = the before-snapshot of the next play with one,
+  // else the play's own end (ballPos + yards). Used to update down & distance
+  // the instant a play finishes.
+  _stateAfterPlay(r,idx){
+    const plays=r.plays;
+    for(let i=idx+1;i<plays.length;i++){
+      try{
+        const sb=plays[i].players&&plays[i].players._stateBefore?JSON.parse(plays[i].players._stateBefore).gameState:null;
+        if(sb)return sb;
+      }catch(e){}
+    }
+    // Fallback: derive from this play.
+    const p=plays[idx]||{};
+    const before=(p.ball_pos_before!=null?p.ball_pos_before:14);
+    return {ballPos:before+(p.yards||0), down:(p.down_before||1), firstDownLine:null,
+      fieldLength:this.fieldLen, possession:p.possession||'offense', quarter:p.quarter||1};
   },
   // Map a yard (in OUR frame: 0 = our goal line at left, fl = opponent goal at
   // right) to a horizontal % across the field, staying inside the 8% end zones.
@@ -1168,15 +1193,22 @@ const Watch={
     const VW=100, VH=44;                 // SVG viewBox
     const x=(yd)=>this._pct(yd,fl);      // 0..100 across
     const drive=this._driveWindow(plays,upto);
-    // Vertical band for stacking play rows (kept within the field, away from edges)
+    // Stacking rows: NEWEST play at the BOTTOM, earlier plays above it.
     const topY=9, botY=VH-7;
     const rows=Math.max(1,drive.length);
-    const rowY=(i)=> rows<=1 ? (VH/2) : (topY + (botY-topY)*(i/(rows-1)));
+    // li = 0..rows-1 (0 = oldest). Put oldest near top, newest at bottom.
+    const rowY=(li)=> rows<=1 ? (botY) : (topY + (botY-topY)*(li/(rows-1)));
 
     let svg=`<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none">`;
-    // end-zone labels + yard lines
-    svg+=`<text x="4" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(-90 4 ${VH/2})">OUR</text>`;
-    svg+=`<text x="96" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(90 96 ${VH/2})">OPP</text>`;
+    // Solid end-zone bands (our = red, opp = blue) with a "G" goal marker.
+    svg+=`<rect x="0" y="0" width="8" height="${VH}" fill="#b71c1c"/>`;
+    svg+=`<rect x="92" y="0" width="8" height="${VH}" fill="#0d47a1"/>`;
+    // goal lines (solid white) at each end-zone edge
+    svg+=`<line x1="8" y1="0" x2="8" y2="${VH}" stroke="#fff" stroke-width="0.6"/>`;
+    svg+=`<line x1="92" y1="0" x2="92" y2="${VH}" stroke="#fff" stroke-width="0.6"/>`;
+    // "G" markers on the goal lines
+    svg+=`<text x="4" y="${VH/2+1.2}" text-anchor="middle" class="ez-g">G</text>`;
+    svg+=`<text x="96" y="${VH/2+1.2}" text-anchor="middle" class="ez-g">G</text>`;
     for(let f=0.1; f<0.95; f+=0.1){
       const xx=x(fl*f);
       svg+=`<line x1="${xx}" y1="0" x2="${xx}" y2="${VH}" stroke="rgba(255,255,255,0.28)" stroke-width="0.25"/>`;
