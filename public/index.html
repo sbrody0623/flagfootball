@@ -102,21 +102,12 @@ h3{font-size:1rem;margin-bottom:6px}
 .team-header .logout-btn{font-size:0.8rem;color:var(--muted);cursor:pointer;text-decoration:underline}
 .loading{text-align:center;padding:20px;color:var(--muted)}
 @media(max-width:400px){.container{padding:6px}.play-btn{padding:14px 8px;font-size:0.9rem}.form-row{flex-direction:column;gap:0}}
-/* ---- Spectator / Watch field (matches the stats/picker field look) ---- */
-.wfield{position:relative;width:100%;height:96px;border-radius:8px;overflow:hidden;margin:8px 0;
-  background:linear-gradient(90deg,#c62828 0%,#2e7d32 8%,#388e3c 50%,#2e7d32 92%,#1565c0 100%);border:2px solid #1b5e20}
-.wfield .ez{position:absolute;top:0;bottom:0;width:8%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.6rem;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;opacity:0.9}
-.wfield .ez.left{left:0;background:rgba(198,40,40,0.55)}
-.wfield .ez.right{right:0;background:rgba(21,101,192,0.55)}
-.wfield .yl{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.3)}
-.wfield .yl-lbl{position:absolute;bottom:2px;transform:translateX(-50%);color:#fff;font-size:0.55rem;opacity:0.8}
-.wfield .fdline{position:absolute;top:0;bottom:0;width:2px;background:#ffeb3b;opacity:0.95;z-index:2}
-.wfield .los{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:0.85;z-index:2}
-.wfield .ball{position:absolute;top:50%;width:22px;height:15px;background:#5d4037;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);transition:left 1.2s ease;box-shadow:0 0 6px rgba(0,0,0,0.6);z-index:4}
-/* ---- Drive chart (stacked play lanes) ---- */
-.wdrive{background:#1b5e20;border:2px solid #14401700;border-radius:8px;padding:0;overflow:hidden;margin:4px 0 10px}
-.wdrive svg{display:block;width:100%}
-.wdrive .lane-lbl{font-size:9px;fill:rgba(255,255,255,0.85)}
+/* ---- Spectator / Watch field (single unified field with play paths) ---- */
+.wfieldwrap{position:relative;width:100%;margin:8px 0;border-radius:8px;overflow:hidden;border:2px solid #1b5e20;
+  background:linear-gradient(90deg,#c62828 0%,#2e7d32 8%,#388e3c 50%,#2e7d32 92%,#1565c0 100%)}
+.wfieldwrap svg{display:block;width:100%;height:auto}
+.wfieldwrap .ez-lbl{fill:#fff;font-size:3px;font-weight:700;opacity:0.9}
+.wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
 .wplay .desc{font-weight:600}
 .wplay .who{font-size:0.82rem;color:var(--muted);margin-top:2px}
@@ -880,7 +871,7 @@ const Watch={
       </div>`;
     ty.classList.remove('hidden');
   },
-  _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); this._pollTimer=null; this._replayTimer=null; },
+  _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); clearTimeout(this._revealTimer); this._pollTimer=null; this._replayTimer=null; this._revealTimer=null; },
   showErr(m){ const el=document.getElementById('watch-error'); el.textContent=m; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),4000); },
 
   async start(){
@@ -924,8 +915,7 @@ const Watch={
       const last=plays[plays.length-1];
       body.innerHTML=this._scoreboard(data.teamName,g)+
         this._statusLine(gs)+
-        this._fieldHtml(gs)+
-        this._driveChart(plays, plays.length-1)+
+        this._unifiedField(gs, plays, plays.length-1)+
         `<h3 style="margin:10px 0 4px">Latest Play</h3>`+
         (last?this._playCard(last):'<div class="wplay">Waiting for the first play…</div>')+
         `<h3 style="margin:12px 0 4px">Recent Plays</h3>`+
@@ -974,13 +964,14 @@ const Watch={
   },
   togglePause(){
     const r=this._replay; if(!r)return;
+    clearTimeout(this._revealTimer);
     r.paused=!r.paused;
     if(!r.paused && r.idx < r.plays.length-1){ this._replayAdvance(); }
     else { clearTimeout(this._replayTimer); this._renderReplay(); }
   },
   replayStep(delta){
     const r=this._replay; if(!r)return;
-    clearTimeout(this._replayTimer);
+    clearTimeout(this._replayTimer); clearTimeout(this._revealTimer);
     r.paused=true;
     r.idx=Math.max(0,Math.min(r.plays.length-1,r.idx+delta));
     this._renderReplay();
@@ -1004,14 +995,15 @@ const Watch={
     const r=this._replay; if(!r)return;
     const body=document.getElementById('watch-body');
     const g=r.game, cur=r.plays[r.idx];
-    // Reconstruct the field state shown from the current play (use its before-state or game_state).
     const gs=this._stateForPlay(cur,g);
     const atEnd=r.idx>=r.plays.length-1;
-    // Running score as of this play (so the scoreboard climbs during the replay).
     const sc=this._scoreAfter(r,r.idx);
     const scoreGame={team_score:sc.team, opp_score:sc.opp, opponent:g.opponent};
-    // When the replay reaches the end, celebrate (or commiserate) with the FINAL score.
     const banner=atEnd?this._resultBanner(g.team_score,g.opp_score):'';
+
+    // Is this a field play we can animate the ball across? (not XP/quarter)
+    const animate = cur && this._isFieldPlay(cur) && !r.paused;
+
     body.innerHTML=banner+this._scoreboard(null,scoreGame,true)+
       `<div class="card" style="text-align:center;padding:8px">
         <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(-1)">⏮ Prev</button>
@@ -1020,10 +1012,44 @@ const Watch={
         <div style="font-size:0.8rem;color:var(--muted);margin-top:6px">Play ${r.idx+1} of ${r.plays.length}${atEnd?' · End':''} · auto-advances every 10s</div>
       </div>`+
       this._statusLine(gs)+
-      this._fieldHtml(gs)+
-      this._driveChart(r.plays, r.idx)+
+      // Field: when animating, draw with ball at the play's START and its own path hidden.
+      this._unifiedField(gs, r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
       `<h3 style="margin:10px 0 4px">This Play</h3>`+
-      (cur?this._playCard(cur):'<div class="wplay">—</div>');
+      `<div id="wthisplay">${animate?'<div class="wplay" style="color:var(--muted)">🏈 The play is developing…</div>':(cur?this._playCard(cur):'<div class="wplay">—</div>')}</div>`;
+
+    // Animate: after a beat, move the ball to the end spot, draw the path, and
+    // reveal the result. This creates the "watch the play, then see the result".
+    if(animate){
+      const fl=gs.fieldLength||this.fieldLen||100;
+      const yy=this._playYards(cur,fl);
+      const startX=this._pct(yy.startYd,fl), endX=this._pct(yy.endYd,fl);
+      const DUR=2000;
+      // JS tween of the ball's cx (reliable across browsers vs CSS on SVG cx).
+      const t0=performance.now();
+      const tick=(now)=>{
+        const ball=document.getElementById('wball');
+        if(!ball)return; // view changed; stop
+        const k=Math.min(1,(now-t0)/DUR);
+        const eased=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2; // easeInOutQuad
+        ball.setAttribute('cx', (startX+(endX-startX)*eased).toFixed(2));
+        if(k<1 && this._replay && this._replay.idx===r.idx){ requestAnimationFrame(tick); }
+      };
+      requestAnimationFrame(tick);
+      // After the glide, draw the path + reveal the result text.
+      clearTimeout(this._revealTimer);
+      this._revealTimer=setTimeout(()=>{
+        this._paintStaticField(gs,r.plays,r.idx);
+        const tp=document.getElementById('wthisplay');
+        if(tp&&cur)tp.innerHTML=this._playCard(cur);
+      },DUR+300);
+    }
+  },
+  // Repaint the field with the current play's path shown (no animation) — used
+  // after the ball finishes gliding. Replaces the whole #wfield-holder block.
+  _paintStaticField(gs,plays,upto){
+    const holder=document.getElementById('wfield-holder');
+    if(!holder)return;
+    holder.outerHTML=this._unifiedField(gs,plays,upto,{});
   },
   // Best-effort field state for a replayed play: prefer the snapshot stored before
   // the play; fall back to ballPosBefore/downBefore.
@@ -1093,107 +1119,108 @@ const Watch={
   // opponent has the ball, their forward progress moves toward our goal (left),
   // so we mirror: ourYard = fl - theirYard.
   _toOurFrame(yd,possession,fl){ return possession==='offense' ? yd : (fl-yd); },
-  _fieldHtml(gs){
-    const fl=gs.fieldLength||this.fieldLen||100;
-    const pct=(yd)=>this._pct(yd,fl);
-    const ballLeft=pct(gs.ballPos!=null?gs.ballPos:14);
-    // yard lines every ~10% of the field
-    let lines='';
-    for(let f=0.1; f<0.95; f+=0.1){
-      const x=pct(fl*f);
-      const yardLbl=Math.round((f<=0.5?f:(1-f))*fl); // 10..50..10 style
-      lines+=`<div class="yl" style="left:${x}%"></div><div class="yl-lbl" style="left:${x}%">${yardLbl}</div>`;
-    }
-    let fd='';
-    if(gs.firstDownLine!=null){ fd=`<div class="fdline" style="left:${pct(gs.firstDownLine)}%"></div>`; }
-    const los=`<div class="los" style="left:${ballLeft}%"></div>`;
-    return `<div class="wfield">
-      <div class="ez left">OUR EZ</div><div class="ez right">OPP EZ</div>
-      ${lines}${fd}${los}
-      <div class="ball" style="left:${ballLeft}%"></div>
-    </div>`;
+  // A play draws on the field only if it has a real field position. XP (PAT) and
+  // quarter markers do NOT — they were stored at ballPos 0, which is what made
+  // the PAT jump to the far side. We skip them for drawing.
+  _isFieldPlay(p){
+    const t=(p.play_type||p.playType||'').toLowerCase();
+    return t!=='xp' && t!=='quarter';
   },
-
-  // ---- DRIVE CHART: stacked play lanes for the current drive ----
-  // plays = full play array; upto = index of the latest play to include (inclusive).
-  _driveChart(plays,upto){
-    if(!plays||!plays.length)return '';
-    if(upto==null)upto=plays.length-1;
-    if(upto<0)return '';            // nothing to chart yet (replay not started)
-    if(upto>plays.length-1)upto=plays.length-1;
-    // Find the start of the current drive: walk back while possession is the same
-    // and the play isn't a quarter marker. A change of possession starts a new drive.
+  // Start/end yard of a play in OUR frame (our team always attacks right).
+  _playYards(p,fl){
+    const before=(p.ball_pos_before!=null?p.ball_pos_before:0);
+    const startYd=this._toOurFrame(before, p.possession, fl);
+    const endYd=this._toOurFrame(before+(p.yards||0), p.possession, fl);
+    return {startYd, endYd};
+  },
+  // Get the current drive's field plays up to index `upto` (cap 8), for stacking.
+  _driveWindow(plays,upto){
+    if(!plays||!plays.length||upto<0)return [];
     const poss=(i)=>plays[i].possession||'offense';
     let start=upto;
     while(start>0 && poss(start-1)===poss(upto) && (plays[start-1].play_type||plays[start-1].playType)!=='quarter'){ start--; }
-    // Collect this drive's real plays (skip quarter markers), cap at last 8.
     let drive=[];
-    for(let i=start;i<=upto;i++){
-      const t=plays[i].play_type||plays[i].playType||'';
-      if(t==='quarter')continue;
-      drive.push(plays[i]);
-    }
-    if(!drive.length)return '';
+    for(let i=start;i<=upto;i++){ if(this._isFieldPlay(plays[i]))drive.push({p:plays[i],idx:i}); }
     if(drive.length>8)drive=drive.slice(drive.length-8);
-
-    const fl=this.fieldLen||100;
-    const laneH=22, padTop=6, padBot=4, W=100; // SVG viewBox is 100 wide (%), scale vertically
-    const H=padTop+padBot+drive.length*laneH;
-    const xPct=(yd)=>this._pct(yd,fl); // 0..100 across viewBox width
-    const driveTeam=poss(upto)==='offense'?'Our':(plays[upto].possession==='offense'?'Our':'Their');
-    const q=(plays[upto].quarter)||'';
-
-    let svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H*1.4}px">`;
-    // faint end-zone bands + midline
-    svg+=`<rect x="0" y="0" width="8" height="${H}" fill="rgba(198,40,40,0.35)"/>`;
-    svg+=`<rect x="92" y="0" width="8" height="${H}" fill="rgba(21,101,192,0.35)"/>`;
-    svg+=`<line x1="50" y1="0" x2="50" y2="${H}" stroke="rgba(255,255,255,0.25)" stroke-width="0.3"/>`;
-
-    drive.forEach((p,li)=>{
-      const y=padTop+li*laneH+laneH/2;
-      const startYd=this._toOurFrame(p.ball_pos_before!=null?p.ball_pos_before:0, p.possession, fl);
-      // End yard = start + yards (in the possessing team's frame), mirrored to our frame.
-      const yds=p.yards||0;
-      const endYd=this._toOurFrame((p.ball_pos_before!=null?p.ball_pos_before:0)+yds, p.possession, fl);
-      const x1=xPct(startYd), x2=xPct(endYd);
-      const type=(p.play_type||p.playType||'').toLowerCase();
-      const result=(p.result||'').toLowerCase();
-      svg+=this._segment(x1,x2,y,type,result,p);
-    });
-    svg+=`</svg>`;
-    return `<div style="font-size:0.8rem;color:var(--muted);margin:6px 0 2px">Current drive${q?` · Q${q}`:''} — read top → bottom</div><div class="wdrive">${svg}</div>${this._driveLegend()}`;
+    return drive;
   },
-  // Draw one play segment with a style based on play type.
-  _segment(x1,x2,y,type,result,p){
-    const red='#e53935', white='#ffffff', ball='#ffd600';
-    let out='';
-    const dot=(x,c)=>`<circle cx="${x}" cy="${y}" r="1.3" fill="${c}"/>`;
-    if(type==='penalty'){
-      // solid red line
-      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${red}" stroke-width="1.6"/>`;
-      out+=dot(x2,red);
-    }else if(type==='pass'){
-      // arc from LOS to end point
-      const mx=(x1+x2)/2, arcH=Math.min(9, Math.max(4,Math.abs(x2-x1)*0.35));
-      const dash=(result==='complete')?'':'2,2';
-      const col=(result==='complete')?white:'rgba(255,255,255,0.55)';
-      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${col}" stroke-width="1.4" stroke-dasharray="${dash}"/>`;
-      out+=dot(x2,result==='complete'?ball:col);
-    }else if(type==='punt'||type==='fg'||type==='fgblock'||type==='puntreturn'||type==='onside'){
-      // long dotted arc (kick)
-      const mx=(x1+x2)/2, arcH=Math.min(12, Math.max(6,Math.abs(x2-x1)*0.4));
-      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="#b3e5fc" stroke-width="1.3" stroke-dasharray="1,2.4"/>`;
-      out+=dot(x2,'#b3e5fc');
-    }else{
-      // run (and default): solid line with a dashed trail behind it
-      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${white}" stroke-width="1.8"/>`;
-      out+=`<line x1="${x1}" y1="${y+2.2}" x2="${x2}" y2="${y+2.2}" stroke="rgba(255,255,255,0.5)" stroke-width="0.9" stroke-dasharray="2,2"/>`;
-      out+=dot(x2,ball);
+
+  // ---- UNIFIED FIELD: one field with the current drive's paths overlaid ----
+  // gs = state to show; plays/upto = play history; opts.animateLast = animate the
+  // ball along the newest play (replay). Returns the field HTML.
+  _unifiedField(gs, plays, upto, opts){
+    opts=opts||{};
+    const fl=gs.fieldLength||this.fieldLen||100;
+    const VW=100, VH=44;                 // SVG viewBox
+    const x=(yd)=>this._pct(yd,fl);      // 0..100 across
+    const drive=this._driveWindow(plays,upto);
+    // Vertical band for stacking play rows (kept within the field, away from edges)
+    const topY=9, botY=VH-7;
+    const rows=Math.max(1,drive.length);
+    const rowY=(i)=> rows<=1 ? (VH/2) : (topY + (botY-topY)*(i/(rows-1)));
+
+    let svg=`<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none">`;
+    // end-zone labels + yard lines
+    svg+=`<text x="4" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(-90 4 ${VH/2})">OUR</text>`;
+    svg+=`<text x="96" y="${VH/2}" text-anchor="middle" class="ez-lbl" transform="rotate(90 96 ${VH/2})">OPP</text>`;
+    for(let f=0.1; f<0.95; f+=0.1){
+      const xx=x(fl*f);
+      svg+=`<line x1="${xx}" y1="0" x2="${xx}" y2="${VH}" stroke="rgba(255,255,255,0.28)" stroke-width="0.25"/>`;
     }
-    // touchdown marker
-    if((p.description||'').includes('TOUCHDOWN')){ out+=`<text x="${x2+1}" y="${y+1}" font-size="6">🏈</text>`; }
-    // start tick
-    out+=`<circle cx="${x1}" cy="${y}" r="1" fill="rgba(255,255,255,0.7)"/>`;
+    // first-down + LOS markers for the CURRENT state
+    if(gs.firstDownLine!=null){ const fx=x(gs.firstDownLine); svg+=`<line x1="${fx}" y1="0" x2="${fx}" y2="${VH}" stroke="#ffeb3b" stroke-width="0.5"/>`; }
+
+    // Draw each field play of the drive on its own row.
+    drive.forEach((d,li)=>{
+      const p=d.p, y=rowY(li);
+      const {startYd,endYd}=this._playYards(p,fl);
+      const isCurrent = d.idx===upto;
+      const reveal = !(opts.animateLast && isCurrent && opts.hideCurrentPath);
+      svg+=this._segment(x(startYd), x(endYd), y, (p.play_type||p.playType||'').toLowerCase(), (p.result||'').toLowerCase(), p, {faded:!isCurrent, hidden:!reveal});
+    });
+
+    // Ball marker: position at the current play's END (or start if animating).
+    let bx, by=VH/2;
+    const cur = drive.length?drive[drive.length-1]:null;
+    if(cur){
+      const {startYd,endYd}=this._playYards(cur.p,fl);
+      by=rowY(drive.length-1);
+      if(opts.animateLast && opts.ballAtStart){ bx=x(startYd); }
+      else { bx=x(endYd); }
+    }else{
+      bx=x(gs.ballPos!=null?gs.ballPos:14);
+    }
+    svg+=`<circle id="wball" class="wball" cx="${bx}" cy="${by}" r="1.9" fill="#5d4037" stroke="#fff" stroke-width="0.5"/>`;
+    svg+=`</svg>`;
+
+    const q=(plays&&upto>=0&&plays[upto]&&plays[upto].quarter)||'';
+    return `<div id="wfield-holder"><div style="font-size:0.78rem;color:var(--muted);margin:6px 0 2px">Current drive${q?` · Q${q}`:''}</div>`+
+      `<div class="wfieldwrap">${svg}</div>${this._driveLegend()}</div>`;
+  },
+  // Draw one play path. style: {faded, hidden}
+  _segment(x1,x2,y,type,result,p,style){
+    style=style||{};
+    if(style.hidden)return '';
+    const red='#e53935', white='#ffffff', ball='#ffd600';
+    const op = style.faded?0.5:1;
+    let out=`<g opacity="${op}">`;
+    const dot=(x,c,r)=>`<circle cx="${x}" cy="${y}" r="${r||1.1}" fill="${c}"/>`;
+    if(type==='penalty'){
+      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${red}" stroke-width="1.1"/>`+dot(x2,red);
+    }else if(type==='pass'){
+      const mx=(x1+x2)/2, arcH=Math.min(7,Math.max(3,Math.abs(x2-x1)*0.35));
+      const dash=(result==='complete')?'':'1.4,1.4';
+      const col=(result==='complete')?white:'rgba(255,255,255,0.6)';
+      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="${dash}"/>`+dot(x2,result==='complete'?ball:col);
+    }else if(type==='punt'||type==='fg'||type==='fgblock'||type==='puntreturn'||type==='onside'){
+      const mx=(x1+x2)/2, arcH=Math.min(9,Math.max(4,Math.abs(x2-x1)*0.4));
+      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="#b3e5fc" stroke-width="0.9" stroke-dasharray="0.7,1.8"/>`+dot(x2,'#b3e5fc');
+    }else{
+      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${white}" stroke-width="1.2"/>`;
+      out+=`<line x1="${x1}" y1="${y+1.4}" x2="${x2}" y2="${y+1.4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.4,1.4"/>`+dot(x2,ball);
+    }
+    if((p.description||'').includes('TOUCHDOWN')){ out+=`<text x="${x2+1}" y="${y+1.5}" font-size="4">🏈</text>`; }
+    out+=`<circle cx="${x1}" cy="${y}" r="0.8" fill="rgba(255,255,255,0.7)"/></g>`;
     return out;
   },
   _driveLegend(){
