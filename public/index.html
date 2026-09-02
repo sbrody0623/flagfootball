@@ -1175,8 +1175,14 @@ const Watch={
       svg+=`<text x="${xx}" y="4" text-anchor="middle" class="yl-num">${yardLbl}</text>`;
       svg+=`<text x="${xx}" y="${VH-1.2}" text-anchor="middle" class="yl-num">${yardLbl}</text>`;
     }
-    // first-down + LOS markers for the CURRENT state
-    if(gs.firstDownLine!=null){ const fx=x(gs.firstDownLine); svg+=`<line x1="${fx}" y1="0" x2="${fx}" y2="${VH}" stroke="#ffeb3b" stroke-width="0.5"/>`; }
+    // first-down marker for the CURRENT state. firstDownLine (like ballPos) is in
+    // the POSSESSING team's frame, so mirror it into our fixed frame when the
+    // opponent has the ball — otherwise a "40" would draw on the wrong side.
+    const gsPoss=gs.possession||'offense';
+    if(gs.firstDownLine!=null){
+      const fdOur=this._toOurFrame(gs.firstDownLine, gsPoss, fl);
+      const fx=x(fdOur); svg+=`<line x1="${fx}" y1="0" x2="${fx}" y2="${VH}" stroke="#ffeb3b" stroke-width="0.5"/>`;
+    }
 
     // Draw each field play of the drive on its own row.
     drive.forEach((d,li)=>{
@@ -1197,7 +1203,7 @@ const Watch={
       if(opts.animateLast && opts.ballAtStart){ bx=x(startYd); }
       else { bx=x(endYd); }
     }else{
-      bx=x(gs.ballPos!=null?gs.ballPos:14);
+      bx=x(this._toOurFrame(gs.ballPos!=null?gs.ballPos:14, gsPoss, fl));
     }
     svg+=`<g id="wball" transform="translate(${bx.toFixed(2)},${by.toFixed(2)})">${this._footballSvg()}</g>`;
     svg+=`</svg>`;
