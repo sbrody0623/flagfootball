@@ -915,14 +915,35 @@ const Watch={
       this.fieldLen=g.field_length||gs.fieldLength||100;
       const plays=data.plays||[];
       const last=plays[plays.length-1];
+      // After a score, the possession's already been handed to the next team in
+      // game_state (ball at the after-score spot). Rather than leave the field
+      // showing the finished TD drive with the ball in the end zone, reset to the
+      // next drive's starting spot with a "waiting" message until a play starts.
+      const betweenDrives = last && this._isScoreEnd(last);
+      let fieldHtml, latestNote;
+      if(betweenDrives){
+        // Empty drive window -> field shows just the ball at game_state.ballPos.
+        fieldHtml=this._unifiedField(gs, [], -1);
+        latestNote=`<div class="wplay" style="text-align:center;color:var(--muted)">🏈 ${last.description||'Score!'}<br><strong style="color:var(--text)">Waiting for the start of the next drive…</strong></div>`;
+      }else{
+        fieldHtml=this._unifiedField(gs, plays, plays.length-1);
+        latestNote=last?this._playCard(last):'<div class="wplay">Waiting for the first play…</div>';
+      }
       body.innerHTML=this._scoreboard(data.teamName,g)+
         this._statusLine(gs)+
-        this._unifiedField(gs, plays, plays.length-1)+
+        fieldHtml+
         `<h3 style="margin:10px 0 4px">Latest Play</h3>`+
-        (last?this._playCard(last):'<div class="wplay">Waiting for the first play…</div>')+
+        latestNote+
         `<h3 style="margin:12px 0 4px">Recent Plays</h3>`+
         plays.slice(-6).reverse().map(p=>this._playCard(p)).join('');
     }catch(e){ /* transient poll error — keep last view */ }
+  },
+  // Did this play END a possession with a score (TD, XP, or safety)?
+  _isScoreEnd(p){
+    const t=(p.play_type||p.playType||'').toLowerCase();
+    if(t==='xp')return true;
+    const d=(p.description||'').toUpperCase();
+    return d.includes('TOUCHDOWN')||d.includes('SAFETY');
   },
 
   // ---- REPLAY MODE ----
