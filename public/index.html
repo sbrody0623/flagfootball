@@ -516,6 +516,7 @@ h3{font-size:1rem;margin-bottom:6px}
     </div>
     <div id="watch-body"></div>
   </div>
+  <div id="watch-thanks" class="hidden"></div>
 </div>
 
 </div>
@@ -840,11 +841,28 @@ const Watch={
     const c=params.get('code');
     document.getElementById('watch-login').classList.remove('hidden');
     document.getElementById('watch-panel').classList.add('hidden');
+    var ty=document.getElementById('watch-thanks'); if(ty)ty.classList.add('hidden');
     if(c){ document.getElementById('watch-code').value=c; }
     UI.show('screen-watch');
     if(c){ this.start(); }
   },
-  exit(){ this._stopAll(); location.href='/'; },
+  // Parents who exit get a friendly thank-you screen — NOT the coach login.
+  exit(){
+    this._stopAll();
+    const name=this.teamName||'the team';
+    // Hide the tabs/header controls; show the thank-you in the body.
+    document.getElementById('watch-login').classList.add('hidden');
+    document.getElementById('watch-panel').classList.add('hidden');
+    var ty=document.getElementById('watch-thanks');
+    ty.innerHTML=`<div class="card" style="text-align:center;padding:40px 16px">
+        <div style="font-size:2.5rem;margin-bottom:8px">🏈</div>
+        <h2 style="margin-bottom:6px">Thank you for watching</h2>
+        <p style="font-size:1.1rem;font-weight:600;color:var(--primary)">${name} Football</p>
+        <p style="color:var(--muted);font-size:0.85rem;margin-top:16px">You can close this page.</p>
+        <button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="Watch.open()">Watch again</button>
+      </div>`;
+    ty.classList.remove('hidden');
+  },
   _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); this._pollTimer=null; this._replayTimer=null; },
   showErr(m){ const el=document.getElementById('watch-error'); el.textContent=m; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),4000); },
 
@@ -855,6 +873,7 @@ const Watch={
     // Validate by hitting the live endpoint once.
     try{
       const data=await this.req(`/watch/${encodeURIComponent(code)}/live`);
+      this.teamName=data.teamName||'';
       document.getElementById('watch-team').textContent='📺 '+data.teamName;
       document.getElementById('watch-login').classList.add('hidden');
       document.getElementById('watch-panel').classList.remove('hidden');
@@ -918,6 +937,7 @@ const Watch={
     try{
       const data=await this.req(`/watch/${encodeURIComponent(this.code)}/game/${gid}`);
       this.roster=data.roster||{};
+      if(data.teamName)this.teamName=data.teamName;
       this._replay={game:data.game, plays:data.plays||[], idx:-1, paused:false};
       this.fieldLen=(data.game.field_length)||100;
       this._renderReplay();
@@ -945,6 +965,21 @@ const Watch={
     r.idx=Math.max(0,Math.min(r.plays.length-1,r.idx+delta));
     this._renderReplay();
   },
+  // Running score AFTER play index `idx`. Uses the next play's before-snapshot
+  // (which holds the score before it ran = the score after `idx`). At the last
+  // play, uses the game's final score.
+  _scoreAfter(r,idx){
+    const plays=r.plays;
+    // Look forward for the next play that has a _stateBefore snapshot.
+    for(let i=idx+1;i<plays.length;i++){
+      try{
+        const sb=plays[i].players&&plays[i].players._stateBefore?JSON.parse(plays[i].players._stateBefore):null;
+        if(sb&&typeof sb.teamScore==='number'){ return {team:sb.teamScore, opp:sb.oppScore}; }
+      }catch(e){}
+    }
+    // No later snapshot -> we're effectively at/after the final play.
+    return {team:r.game.team_score, opp:r.game.opp_score};
+  },
   _renderReplay(){
     const r=this._replay; if(!r)return;
     const body=document.getElementById('watch-body');
@@ -952,7 +987,10 @@ const Watch={
     // Reconstruct the field state shown from the current play (use its before-state or game_state).
     const gs=this._stateForPlay(cur,g);
     const atEnd=r.idx>=r.plays.length-1;
-    body.innerHTML=this._scoreboard(this.teamName||g.opponent?('vs '+g.opponent):'',g,true)+
+    // Running score as of this play (so the scoreboard climbs during the replay).
+    const sc=this._scoreAfter(r,r.idx);
+    const scoreGame={team_score:sc.team, opp_score:sc.opp, opponent:g.opponent};
+    body.innerHTML=this._scoreboard(null,scoreGame,true)+
       `<div class="card" style="text-align:center;padding:8px">
         <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(-1)">⏮ Prev</button>
         <button class="btn btn-primary btn-sm" onclick="Watch.togglePause()">${r.paused?'▶️ Resume':'⏸ Pause'}</button>
@@ -978,8 +1016,9 @@ const Watch={
 
   // ---- SHARED RENDER HELPERS ----
   _scoreboard(teamName,g,replay){
+    const us=this.teamName||teamName||'Us';
     return `<div class="scoreboard">
-      <div class="team"><div class="name">Us</div><div class="pts">${g.team_score}</div></div>
+      <div class="team"><div class="name">${us}</div><div class="pts">${g.team_score}</div></div>
       <div class="vs">${replay?'REPLAY':'VS'}</div>
       <div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div>
     </div>`;
