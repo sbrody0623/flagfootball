@@ -49,6 +49,7 @@ create table if not exists teams (
   password_hash text not null,
   security_question    text,
   security_answer_hash text,
+  watch_code   text unique,
   created_at   timestamptz default now()
 );
 
@@ -120,9 +121,10 @@ create table if not exists contact_messages (
 ```sql
 alter table teams add column if not exists security_question    text;
 alter table teams add column if not exists security_answer_hash text;
+alter table teams add column if not exists watch_code           text unique;
 ```
 
-Teams created before these columns existed simply won't have a security question — those users fall back to the "contact admin" form on the login screen.
+Teams created before these columns existed simply won't have a security question — those users fall back to the "contact admin" form on the login screen. The `watch_code` column powers the live spectator view (see [Live Spectator View](#live-spectator-view)).
 
 ### 2. Configure environment variables
 
@@ -196,6 +198,21 @@ create policy "deny all direct access" on contact_messages as restrictive for al
 4. **Add your roster** — jersey numbers, names, positions (or bulk-import).
 5. **Start a game** — tap buttons to record plays in real time from your phone.
 6. **Review** — download the box score and browse game history.
+
+## Live Spectator View
+
+Parents can watch plays as they happen — no account needed, just a shareable link.
+
+**How it works:**
+
+- Each team has a **watch code**. The coach (logged in) opens the **📺 Share with Parents** card on the home screen to get a link like `https://your-app.com/watch?code=abcd2345`, and shares it with the team. A **🔄 New Code** button regenerates it if a link ever leaks.
+- Parents open the link (phone/tablet/computer) and see a **football field** with the ball position, down & distance, score, and possession, plus the latest play with the **names and numbers** of the players involved.
+- **Live mode** refreshes automatically every ~3 seconds (polling — no extra infrastructure).
+- **Replay mode** lets them pick a finished game and watch it unfold one play at a time (auto-advances every 10 seconds), with **Pause/Resume** and Prev/Next controls.
+
+**Security:** the spectator endpoints are **read-only and gated by the watch code**. They never expose passwords, tokens, or login codes. Because access is by shareable link, the coach should share the code with their team only (and regenerate it if needed). Player names are shown, so treat the link accordingly.
+
+> The spectator page talks only to this server (never to Supabase directly), so RLS stays fully intact.
 
 ## Admin Panel
 

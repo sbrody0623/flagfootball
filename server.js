@@ -261,6 +261,127 @@ app.post('/api/security-question', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ---- Watch code (spectator link for parents) ----
+
+// Generate a short, readable, URL-safe watch code (no ambiguous chars).
+function genWatchCode() {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789'; // no i/l/o/0/1
+  let s = '';
+  for (let i = 0; i < 8; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
+// Get the logged-in team's watch code (creating one if it doesn't exist yet).
+app.get('/api/watch-code', authenticate, async (req, res) => {
+  try {
+    const teams = await supaGet('teams', `id=eq.${req.teamId}&select=watch_code`);
+    let code = teams && teams[0] && teams[0].watch_code;
+    if (!code) {
+      code = genWatchCode();
+      await supaUpdate('teams', `id=eq.${req.teamId}`, { watch_code: code });
+    }
+    res.json({ code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Regenerate the watch code (invalidates any previously-shared link).
+app.post('/api/watch-code/regenerate', authenticate, async (req, res) => {
+  try {
+    const code = genWatchCode();
+    await supaUpdate('teams', `id=eq.${req.teamId}`, { watch_code: code });
+    res.json({ code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
+// SPECTATOR / WATCH ROUTES (public, gated ONLY by the watch code)
+// No auth token required. These are READ-ONLY and never return any sensitive
+// fields (no password hashes, tokens, login codes, security questions).
+// ============================================================
+
+// Resolve a team by its watch code. Returns null if not found.
+async function teamByWatchCode(code) {
+  if (!code) return null;
+  const c = String(code).toLowerCase().trim();
+  const teams = await supaGet('teams', `watch_code=eq.${encodeURIComponent(c)}&select=id,team_name`);
+  return (teams && teams[0]) || null;
+}
+
+// Build a {number: name} map for a season's roster (for showing player names).
+async function rosterMap(seasonId) {
+  const map = {};
+  try {
+    const players = await supaGet('players', `season_id=eq.${seasonId}&select=number,name`);
+    for (const p of (players || [])) map[String(p.number)] = p.name;
+  } catch (e) {}
+  return map;
+}
+
+// Attach quarter (from players._quarter) as a top-level field, like the authed route.
+function withQuarter(plays) {
+  return (plays || []).map(p => {
+    const pl = p.players || {};
+    return Object.assign({}, p, { quarter: (pl._quarter !== undefined ? pl._quarter : null) });
+  });
+}
+
+// Live view: the team's current in-progress game + its plays + roster names.
+app.get('/api/watch/:code/live', async (req, res) => {
+  try {
+    const team = await teamByWatchCode(req.params.code);
+    if (!team) return res.status(404).json({ error: 'Invalid watch code' });
+    const seasons = await supaGet('seasons', `team_id=eq.${team.id}&select=id&order=created_at.desc`);
+    let active = null, activeSeasonId = null;
+    for (const s of (seasons || [])) {
+      const games = await supaGet('games', `season_id=eq.${s.id}&completed=eq.false&order=created_at.desc&limit=1`);
+      if (games && games.length) { active = games[0]; activeSeasonId = s.id; break; }
+    }
+    if (!active) return res.json({ teamName: team.team_name, live: false });
+    const plays = withQuarter(await supaGet('plays', `game_id=eq.${active.id}&order=play_number.asc`));
+    const roster = await rosterMap(activeSeasonId);
+    res.json({
+      teamName: team.team_name, live: true,
+      game: { id: active.id, opponent: active.opponent, home_away: active.home_away,
+        field_length: active.field_length, team_score: active.team_score,
+        opp_score: active.opp_score, game_state: active.game_state },
+      plays, roster
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List finished games (for replay selection).
+app.get('/api/watch/:code/games', async (req, res) => {
+  try {
+    const team = await teamByWatchCode(req.params.code);
+    if (!team) return res.status(404).json({ error: 'Invalid watch code' });
+    const seasons = await supaGet('seasons', `team_id=eq.${team.id}&select=id,name&order=created_at.desc`);
+    const out = [];
+    for (const s of (seasons || [])) {
+      const games = await supaGet('games', `season_id=eq.${s.id}&completed=eq.true&order=created_at.desc`);
+      for (const g of (games || [])) {
+        out.push({ id: g.id, seasonId: s.id, seasonName: s.name, opponent: g.opponent,
+          home_away: g.home_away, team_score: g.team_score, opp_score: g.opp_score, field_length: g.field_length });
+      }
+    }
+    res.json({ teamName: team.team_name, games: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One game's full plays + roster (for replay). Verifies the game belongs to the team.
+app.get('/api/watch/:code/game/:gid', async (req, res) => {
+  try {
+    const team = await teamByWatchCode(req.params.code);
+    if (!team) return res.status(404).json({ error: 'Invalid watch code' });
+    const g = (await supaGet('games', `id=eq.${req.params.gid}&select=id,season_id,opponent,home_away,team_score,opp_score,field_length,game_state`))[0];
+    if (!g) return res.status(404).json({ error: 'Game not found' });
+    const season = (await supaGet('seasons', `id=eq.${g.season_id}&team_id=eq.${team.id}&select=id`))[0];
+    if (!season) return res.status(404).json({ error: 'Game not found' }); // not this team's game
+    const plays = withQuarter(await supaGet('plays', `game_id=eq.${g.id}&order=play_number.asc`));
+    const roster = await rosterMap(g.season_id);
+    res.json({ teamName: team.team_name, game: g, plays, roster });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================================
 // CONTACT (public) — stores a help/contact message for the admin to read
 // ============================================================

@@ -102,6 +102,18 @@ h3{font-size:1rem;margin-bottom:6px}
 .team-header .logout-btn{font-size:0.8rem;color:var(--muted);cursor:pointer;text-decoration:underline}
 .loading{text-align:center;padding:20px;color:var(--muted)}
 @media(max-width:400px){.container{padding:6px}.play-btn{padding:14px 8px;font-size:0.9rem}.form-row{flex-direction:column;gap:0}}
+/* ---- Spectator / Watch field ---- */
+.wfield{position:relative;width:100%;height:150px;background:repeating-linear-gradient(90deg,#2e7d32 0,#2e7d32 9%,#388e3c 9%,#388e3c 10%);border:2px solid #1b5e20;border-radius:8px;overflow:hidden;margin:8px 0}
+.wfield .ez{position:absolute;top:0;bottom:0;width:8%;background:#0d3b12;color:#fff;font-size:0.6rem;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;opacity:0.85}
+.wfield .ez.left{left:0}.wfield .ez.right{right:0}
+.wfield .fdline{position:absolute;top:0;bottom:0;width:2px;background:#ffeb3b;opacity:0.9}
+.wfield .los{position:absolute;top:0;bottom:0;width:2px;background:#2196f3;opacity:0.9}
+.wfield .ball{position:absolute;top:50%;width:22px;height:14px;background:#5d4037;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);transition:left 1.2s ease;box-shadow:0 0 6px rgba(0,0,0,0.5);z-index:3}
+.wfield .yd{position:absolute;bottom:2px;font-size:0.55rem;color:rgba(255,255,255,0.7);transform:translateX(-50%)}
+.wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
+.wplay .desc{font-weight:600}
+.wplay .who{font-size:0.82rem;color:var(--muted);margin-top:2px}
+.wbadge{display:inline-block;background:#e3f2fd;color:#1565c0;border-radius:12px;padding:1px 8px;font-size:0.72rem;margin-right:4px}
 </style>
 </head>
 <body>
@@ -191,6 +203,17 @@ h3{font-size:1rem;margin-bottom:6px}
   </div>
   <h2>Seasons</h2>
   <div id="season-list-el"></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="cursor:pointer" onclick="ShareWatch.toggle()">📺 Share with Parents <span style="font-size:0.8rem;color:var(--muted);font-weight:400">(tap to expand)</span></h3>
+    <div id="share-watch-body" class="hidden">
+      <p style="font-size:0.85rem;color:var(--muted);margin:4px 0 8px">Share this link so parents can watch plays live (or replay games). Anyone with the link can view — share it with your team only.</p>
+      <div class="form-group"><label>Watch link</label><input type="text" id="watch-link" readonly onclick="this.select()" style="font-size:0.82rem"></div>
+      <button class="btn btn-primary btn-sm" onclick="ShareWatch.copy()">📋 Copy Link</button>
+      <button class="btn btn-secondary btn-sm" onclick="ShareWatch.regenerate()">🔄 New Code</button>
+      <p id="share-watch-msg" style="font-size:0.8rem;color:var(--success);margin-top:6px"></p>
+    </div>
+  </div>
 
   <div class="card" style="margin-top:16px">
     <h3 style="cursor:pointer" onclick="Account.toggle()">🔐 Account Security <span style="font-size:0.8rem;color:var(--muted);font-weight:400">(tap to expand)</span></h3>
@@ -462,6 +485,28 @@ h3{font-size:1rem;margin-bottom:6px}
     </div>
     <div id="admin-teams-el"></div>
     <div id="admin-messages-el" class="hidden"></div>
+  </div>
+</div>
+
+<!-- SPECTATOR / WATCH (reached via the /watch URL, gated by a watch code) -->
+<div id="screen-watch" class="hidden">
+  <div id="watch-login" class="card">
+    <h3>📺 Watch Live</h3>
+    <p style="font-size:0.85rem;color:var(--muted)">Enter the watch code your coach shared with you.</p>
+    <div class="form-group"><label>Watch Code</label><input type="text" id="watch-code" placeholder="e.g. abcd2345" autocapitalize="none"></div>
+    <button class="btn btn-primary" onclick="Watch.start()">Watch</button>
+    <div id="watch-error" class="error-box hidden"></div>
+  </div>
+  <div id="watch-panel" class="hidden">
+    <div class="team-header">
+      <span class="team-name" id="watch-team">📺 Watching</span>
+      <span class="logout-btn" onclick="Watch.exit()">Exit</span>
+    </div>
+    <div class="card">
+      <button class="btn btn-primary btn-sm" id="watch-tab-live" onclick="Watch.showLive()">🔴 Live</button>
+      <button class="btn btn-secondary btn-sm" id="watch-tab-replay" onclick="Watch.showReplayList()">▶️ Replay a Game</button>
+    </div>
+    <div id="watch-body"></div>
   </div>
 </div>
 
@@ -768,6 +813,204 @@ const Admin={
 };
 
 // ============================================================
+// WATCH — read-only spectator view (live + replay), gated by a watch code.
+// ============================================================
+const Watch={
+  code:null, mode:null, _pollTimer:null, _replayTimer:null,
+  roster:{}, fieldLen:100,
+  ROLES:{qb:'QB',receiver:'WR',carrier:'RB',punter:'P',kicker:'K',flagPuller:'Flag',defender:'DB',interceptor:'INT',returner:'RET',blocker:'BLK'},
+
+  async req(path){
+    const res=await fetch('/api'+path);
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Request failed');
+    return data;
+  },
+  // Open the watch screen (called from /watch or ?code=). Prefill code if present.
+  open(){
+    const params=new URLSearchParams(location.search);
+    const c=params.get('code');
+    document.getElementById('watch-login').classList.remove('hidden');
+    document.getElementById('watch-panel').classList.add('hidden');
+    if(c){ document.getElementById('watch-code').value=c; }
+    UI.show('screen-watch');
+    if(c){ this.start(); }
+  },
+  exit(){ this._stopAll(); location.href='/'; },
+  _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); this._pollTimer=null; this._replayTimer=null; },
+  showErr(m){ const el=document.getElementById('watch-error'); el.textContent=m; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),4000); },
+
+  async start(){
+    const code=document.getElementById('watch-code').value.trim().toLowerCase();
+    if(!code){ this.showErr('Enter a watch code'); return; }
+    this.code=code;
+    // Validate by hitting the live endpoint once.
+    try{
+      const data=await this.req(`/watch/${encodeURIComponent(code)}/live`);
+      document.getElementById('watch-team').textContent='📺 '+data.teamName;
+      document.getElementById('watch-login').classList.add('hidden');
+      document.getElementById('watch-panel').classList.remove('hidden');
+      this.showLive();
+    }catch(e){ this.showErr(e.message||'Invalid watch code'); }
+  },
+
+  _setTab(active){
+    document.getElementById('watch-tab-live').className='btn btn-sm '+(active==='live'?'btn-primary':'btn-secondary');
+    document.getElementById('watch-tab-replay').className='btn btn-sm '+(active==='replay'?'btn-primary':'btn-secondary');
+  },
+
+  // ---- LIVE MODE ----
+  async showLive(){
+    this._stopAll(); this.mode='live'; this._setTab('live');
+    await this._pollLive();
+    this._pollTimer=setInterval(()=>this._pollLive(),3000); // ~3s refresh
+  },
+  async _pollLive(){
+    try{
+      const data=await this.req(`/watch/${encodeURIComponent(this.code)}/live`);
+      this.roster=data.roster||{};
+      const body=document.getElementById('watch-body');
+      if(!data.live){
+        body.innerHTML='<div class="card" style="text-align:center">No live game right now.<br><span style="color:var(--muted);font-size:0.85rem">This page updates automatically when a game starts. Or tap ▶️ Replay a Game.</span></div>';
+        return;
+      }
+      const g=data.game, gs=g.game_state||{};
+      this.fieldLen=g.field_length||gs.fieldLength||100;
+      const plays=data.plays||[];
+      const last=plays[plays.length-1];
+      body.innerHTML=this._scoreboard(data.teamName,g)+
+        this._statusLine(gs)+
+        this._fieldHtml(gs)+
+        `<h3 style="margin:10px 0 4px">Latest Play</h3>`+
+        (last?this._playCard(last):'<div class="wplay">Waiting for the first play…</div>')+
+        `<h3 style="margin:12px 0 4px">Recent Plays</h3>`+
+        plays.slice(-6).reverse().map(p=>this._playCard(p)).join('');
+    }catch(e){ /* transient poll error — keep last view */ }
+  },
+
+  // ---- REPLAY MODE ----
+  async showReplayList(){
+    this._stopAll(); this.mode='replay'; this._setTab('replay');
+    const body=document.getElementById('watch-body');
+    body.innerHTML='<div class="loading">Loading games…</div>';
+    try{
+      const data=await this.req(`/watch/${encodeURIComponent(this.code)}/games`);
+      if(!data.games.length){ body.innerHTML='<div class="card">No finished games to replay yet.</div>'; return; }
+      body.innerHTML='<div class="card"><h3>Pick a game to replay</h3></div>'+
+        data.games.map(g=>`<div class="card"><h3>${g.home_away==='home'?'🏠':'✈️'} vs ${g.opponent}</h3>
+          <p style="color:var(--muted);font-size:0.85rem">${g.seasonName} · Final ${g.team_score}–${g.opp_score}</p>
+          <button class="btn btn-primary btn-sm" onclick="Watch.startReplay(${g.id})">▶️ Replay</button></div>`).join('');
+    }catch(e){ body.innerHTML=`<div class="card">${e.message}</div>`; }
+  },
+  async startReplay(gid){
+    this._stopAll();
+    const body=document.getElementById('watch-body');
+    body.innerHTML='<div class="loading">Loading game…</div>';
+    try{
+      const data=await this.req(`/watch/${encodeURIComponent(this.code)}/game/${gid}`);
+      this.roster=data.roster||{};
+      this._replay={game:data.game, plays:data.plays||[], idx:-1, paused:false};
+      this.fieldLen=(data.game.field_length)||100;
+      this._renderReplay();
+      this._replayAdvance(); // show first play immediately, then tick
+    }catch(e){ body.innerHTML=`<div class="card">${e.message}</div>`; }
+  },
+  _replayAdvance(){
+    const r=this._replay; if(!r)return;
+    if(r.idx < r.plays.length-1){ r.idx++; }
+    this._renderReplay();
+    if(!r.paused && r.idx < r.plays.length-1){
+      this._replayTimer=setTimeout(()=>this._replayAdvance(),10000); // 10s per play
+    }
+  },
+  togglePause(){
+    const r=this._replay; if(!r)return;
+    r.paused=!r.paused;
+    if(!r.paused && r.idx < r.plays.length-1){ this._replayAdvance(); }
+    else { clearTimeout(this._replayTimer); this._renderReplay(); }
+  },
+  replayStep(delta){
+    const r=this._replay; if(!r)return;
+    clearTimeout(this._replayTimer);
+    r.paused=true;
+    r.idx=Math.max(0,Math.min(r.plays.length-1,r.idx+delta));
+    this._renderReplay();
+  },
+  _renderReplay(){
+    const r=this._replay; if(!r)return;
+    const body=document.getElementById('watch-body');
+    const g=r.game, cur=r.plays[r.idx];
+    // Reconstruct the field state shown from the current play (use its before-state or game_state).
+    const gs=this._stateForPlay(cur,g);
+    const atEnd=r.idx>=r.plays.length-1;
+    body.innerHTML=this._scoreboard(this.teamName||g.opponent?('vs '+g.opponent):'',g,true)+
+      `<div class="card" style="text-align:center;padding:8px">
+        <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(-1)">⏮ Prev</button>
+        <button class="btn btn-primary btn-sm" onclick="Watch.togglePause()">${r.paused?'▶️ Resume':'⏸ Pause'}</button>
+        <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(1)">Next ⏭</button>
+        <div style="font-size:0.8rem;color:var(--muted);margin-top:6px">Play ${r.idx+1} of ${r.plays.length}${atEnd?' · End':''} · auto-advances every 10s</div>
+      </div>`+
+      this._statusLine(gs)+
+      this._fieldHtml(gs)+
+      `<h3 style="margin:10px 0 4px">This Play</h3>`+
+      (cur?this._playCard(cur):'<div class="wplay">—</div>');
+  },
+  // Best-effort field state for a replayed play: prefer the snapshot stored before
+  // the play; fall back to ballPosBefore/downBefore.
+  _stateForPlay(p,g){
+    if(!p)return (g.game_state||{});
+    let snap=null;
+    try{ if(p.players&&p.players._stateBefore)snap=JSON.parse(p.players._stateBefore).gameState; }catch(e){}
+    if(snap)return snap;
+    return {ballPos:(p.ball_pos_before!=null?p.ball_pos_before:14),down:(p.down_before||1),
+      firstDownLine:null,fieldLength:this.fieldLen,possession:p.possession||'offense'};
+  },
+
+  // ---- SHARED RENDER HELPERS ----
+  _scoreboard(teamName,g,replay){
+    return `<div class="scoreboard">
+      <div class="team"><div class="name">Us</div><div class="pts">${g.team_score}</div></div>
+      <div class="vs">${replay?'REPLAY':'VS'}</div>
+      <div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div>
+    </div>`;
+  },
+  _statusLine(gs){
+    const q=gs.quarter||1; const qlbl=q>=5?('OT'+(q-4)):('Q'+q);
+    const dn=['1st','2nd','3rd','4th'][(gs.down||1)-1]||'4th';
+    const fl=gs.fieldLength||this.fieldLen;
+    const toGo=(gs.firstDownLine!=null&&gs.firstDownLine>=fl)?'Goal':(gs.firstDownLine!=null?(gs.firstDownLine-gs.ballPos):'');
+    const poss=gs.possession==='offense'?'🏈 Our Ball':'🛡️ Their Ball';
+    return `<div class="card" style="display:flex;justify-content:space-between;font-size:0.9rem;padding:8px 12px">
+      <span><strong>${qlbl}</strong></span><span>${dn}${toGo!==''?' & '+toGo:''}</span><span>${poss}</span></div>`;
+  },
+  _fieldHtml(gs){
+    const fl=gs.fieldLength||this.fieldLen||100;
+    const pct=(yd)=>{ const clamped=Math.max(0,Math.min(fl,yd)); return 8+(clamped/fl)*84; }; // 8%..92%
+    const ballLeft=pct(gs.ballPos!=null?gs.ballPos:14);
+    let fd='';
+    if(gs.firstDownLine!=null){ fd=`<div class="fdline" style="left:${pct(gs.firstDownLine)}%"></div>`; }
+    const los=`<div class="los" style="left:${ballLeft}%"></div>`;
+    return `<div class="wfield">
+      <div class="ez left">OWN</div><div class="ez right">OPP</div>
+      ${fd}${los}
+      <div class="ball" style="left:${ballLeft}%"></div>
+      <div class="yd" style="left:${pct(fl*0.25)}%">${Math.round(fl*0.25)}</div>
+      <div class="yd" style="left:${pct(fl*0.5)}%">50</div>
+      <div class="yd" style="left:${pct(fl*0.75)}%">${Math.round(fl*0.25)}</div>
+    </div>`;
+  },
+  _playCard(p){
+    const desc=p.description||p.desc||'';
+    const pl=p.players||{};
+    const who=Object.keys(this.ROLES).filter(k=>pl[k]!=null&&pl[k]!=='').map(k=>{
+      const num=pl[k]; const name=this.roster[String(num)];
+      return `<span class="wbadge">${this.ROLES[k]} #${num}${name?' '+name:''}</span>`;
+    }).join('');
+    return `<div class="wplay"><div class="desc">${desc}</div>${who?`<div class="who">${who}</div>`:''}</div>`;
+  }
+};
+
+// ============================================================
 // UI
 // ============================================================
 const UI={
@@ -996,6 +1239,42 @@ const Account={
       alert('✅ Security question saved. You can now reset your password from the login screen if you forget it.');
       this.refresh();
     }catch(e){alert('Error: '+(e.message||'Could not save.'));}
+  }
+};
+
+// ============================================================
+// SHARE WATCH — coach's card to get/copy the parent watch link
+// ============================================================
+const ShareWatch={
+  _open:false, _code:null,
+  async toggle(){
+    this._open=!this._open;
+    document.getElementById('share-watch-body').classList.toggle('hidden',!this._open);
+    if(this._open && !this._code){ await this.load(); }
+  },
+  _link(){ return location.origin+'/watch?code='+(this._code||''); },
+  async load(){
+    try{
+      const data=await API.get('/watch-code');
+      this._code=data.code;
+      document.getElementById('watch-link').value=this._link();
+    }catch(e){ document.getElementById('share-watch-msg').style.color='var(--danger)';
+      document.getElementById('share-watch-msg').textContent='Could not load watch link: '+(e.message||''); }
+  },
+  copy(){
+    const inp=document.getElementById('watch-link'); inp.select();
+    const done=()=>{ const m=document.getElementById('share-watch-msg'); m.style.color='var(--success)'; m.textContent='✅ Link copied!'; setTimeout(()=>m.textContent='',3000); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(this._link()).then(done,()=>{try{document.execCommand('copy');done();}catch(e){}}); }
+    else { try{document.execCommand('copy');done();}catch(e){} }
+  },
+  async regenerate(){
+    if(!confirm('Generate a NEW watch link? The old link will stop working.'))return;
+    try{
+      const data=await API.post('/watch-code/regenerate');
+      this._code=data.code;
+      document.getElementById('watch-link').value=this._link();
+      const m=document.getElementById('share-watch-msg'); m.style.color='var(--success)'; m.textContent='✅ New link generated. Share the new one.'; setTimeout(()=>m.textContent='',4000);
+    }catch(e){ alert('Error: '+(e.message||'Could not regenerate.')); }
   }
 };
 
@@ -3196,9 +3475,12 @@ if('serviceWorker' in navigator){
 // ============================================================
 // INIT
 // ============================================================
-// The /admin URL opens the admin panel; everything else is the normal app.
-if(location.pathname.replace(/\/+$/,'')==='/admin'){
+// Route by URL path: /admin -> admin panel, /watch -> spectator view, else app.
+var _path=location.pathname.replace(/\/+$/,'');
+if(_path==='/admin'){
   Admin.open();
+}else if(_path==='/watch'){
+  Watch.open();
 }else{
   Auth.check();
 }
