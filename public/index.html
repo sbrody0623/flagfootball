@@ -957,8 +957,11 @@ const Watch={
       if(data.teamName)this.teamName=data.teamName;
       this._replay={game:data.game, plays:data.plays||[], idx:-1, paused:false};
       this.fieldLen=(data.game.field_length)||100;
-      this._renderReplay();
-      this._replayAdvance(); // show first play immediately, then tick
+      if(!this._replay.plays.length){
+        document.getElementById('watch-body').innerHTML='<div class="card">This game has no recorded plays to replay.</div>';
+        return;
+      }
+      this._replayAdvance(); // advances to play 0 and renders
     }catch(e){ body.innerHTML=`<div class="card">${e.message}</div>`; }
   },
   _replayAdvance(){
@@ -1116,6 +1119,8 @@ const Watch={
   _driveChart(plays,upto){
     if(!plays||!plays.length)return '';
     if(upto==null)upto=plays.length-1;
+    if(upto<0)return '';            // nothing to chart yet (replay not started)
+    if(upto>plays.length-1)upto=plays.length-1;
     // Find the start of the current drive: walk back while possession is the same
     // and the play isn't a quarter marker. A change of possession starts a new drive.
     const poss=(i)=>plays[i].possession||'offense';
