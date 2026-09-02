@@ -107,6 +107,7 @@ h3{font-size:1rem;margin-bottom:6px}
   background:linear-gradient(90deg,#c62828 0%,#2e7d32 8%,#388e3c 50%,#2e7d32 92%,#1565c0 100%)}
 .wfieldwrap svg{display:block;width:100%;height:auto}
 .wfieldwrap .ez-lbl{fill:#fff;font-size:3px;font-weight:700;opacity:0.9}
+.wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
 .wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
 .wplay .desc{font-weight:600}
@@ -1025,13 +1026,16 @@ const Watch={
       const startX=this._pct(yy.startYd,fl), endX=this._pct(yy.endYd,fl);
       const DUR=2000;
       // JS tween of the ball's cx (reliable across browsers vs CSS on SVG cx).
+      const by=(document.getElementById('wball')&&document.getElementById('wball').getAttribute('transform')||'').match(/,([-\d.]+)\)/);
+      const yPos=by?by[1]:(gs && 22);
       const t0=performance.now();
       const tick=(now)=>{
         const ball=document.getElementById('wball');
         if(!ball)return; // view changed; stop
         const k=Math.min(1,(now-t0)/DUR);
         const eased=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2; // easeInOutQuad
-        ball.setAttribute('cx', (startX+(endX-startX)*eased).toFixed(2));
+        const cx=(startX+(endX-startX)*eased).toFixed(2);
+        ball.setAttribute('transform', `translate(${cx},${yPos})`);
         if(k<1 && this._replay && this._replay.idx===r.idx){ requestAnimationFrame(tick); }
       };
       requestAnimationFrame(tick);
@@ -1166,6 +1170,10 @@ const Watch={
     for(let f=0.1; f<0.95; f+=0.1){
       const xx=x(fl*f);
       svg+=`<line x1="${xx}" y1="0" x2="${xx}" y2="${VH}" stroke="rgba(255,255,255,0.28)" stroke-width="0.25"/>`;
+      // yard number (10..50..10), near the top and bottom like a real field
+      const yardLbl=Math.round((f<=0.5?f:(1-f))*fl);
+      svg+=`<text x="${xx}" y="4" text-anchor="middle" class="yl-num">${yardLbl}</text>`;
+      svg+=`<text x="${xx}" y="${VH-1.2}" text-anchor="middle" class="yl-num">${yardLbl}</text>`;
     }
     // first-down + LOS markers for the CURRENT state
     if(gs.firstDownLine!=null){ const fx=x(gs.firstDownLine); svg+=`<line x1="${fx}" y1="0" x2="${fx}" y2="${VH}" stroke="#ffeb3b" stroke-width="0.5"/>`; }
@@ -1179,7 +1187,8 @@ const Watch={
       svg+=this._segment(x(startYd), x(endYd), y, (p.play_type||p.playType||'').toLowerCase(), (p.result||'').toLowerCase(), p, {faded:!isCurrent, hidden:!reveal});
     });
 
-    // Ball marker: position at the current play's END (or start if animating).
+    // Ball marker (small football): position at the current play's END
+    // (or START if we're about to animate it moving).
     let bx, by=VH/2;
     const cur = drive.length?drive[drive.length-1]:null;
     if(cur){
@@ -1190,44 +1199,56 @@ const Watch={
     }else{
       bx=x(gs.ballPos!=null?gs.ballPos:14);
     }
-    svg+=`<circle id="wball" class="wball" cx="${bx}" cy="${by}" r="1.9" fill="#5d4037" stroke="#fff" stroke-width="0.5"/>`;
+    svg+=`<g id="wball" transform="translate(${bx.toFixed(2)},${by.toFixed(2)})">${this._footballSvg()}</g>`;
     svg+=`</svg>`;
 
     const q=(plays&&upto>=0&&plays[upto]&&plays[upto].quarter)||'';
     return `<div id="wfield-holder"><div style="font-size:0.78rem;color:var(--muted);margin:6px 0 2px">Current drive${q?` · Q${q}`:''}</div>`+
       `<div class="wfieldwrap">${svg}</div>${this._driveLegend()}</div>`;
   },
-  // Draw one play path. style: {faded, hidden}
+  // A small football glyph, centered at (0,0), for use inside a translated <g>.
+  _footballSvg(){
+    return `<ellipse rx="1.7" ry="1.05" fill="#7b3f00" stroke="#fff" stroke-width="0.35"/>`+
+      `<line x1="-0.9" y1="0" x2="0.9" y2="0" stroke="#fff" stroke-width="0.3"/>`+
+      `<line x1="-0.4" y1="-0.35" x2="-0.4" y2="0.35" stroke="#fff" stroke-width="0.25"/>`+
+      `<line x1="0" y1="-0.4" x2="0" y2="0.4" stroke="#fff" stroke-width="0.25"/>`+
+      `<line x1="0.4" y1="-0.35" x2="0.4" y2="0.35" stroke="#fff" stroke-width="0.25"/>`;
+  },
+  // Draw one play path. All plays are thin BLACK dashed lines except penalties
+  // (solid red). style: {faded, hidden}
   _segment(x1,x2,y,type,result,p,style){
     style=style||{};
     if(style.hidden)return '';
-    const red='#e53935', white='#ffffff', ball='#ffd600';
-    const op = style.faded?0.5:1;
+    const black='#111', red='#e53935';
+    const op = style.faded?0.55:1;
+    const sw = 0.55;                     // thin
     let out=`<g opacity="${op}">`;
-    const dot=(x,c,r)=>`<circle cx="${x}" cy="${y}" r="${r||1.1}" fill="${c}"/>`;
+    const endMark=(x)=>`<g transform="translate(${x},${y})">${this._footballSvg()}</g>`;
     if(type==='penalty'){
-      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${red}" stroke-width="1.1"/>`+dot(x2,red);
+      // penalty = solid red line
+      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${red}" stroke-width="0.7"/>`;
     }else if(type==='pass'){
       const mx=(x1+x2)/2, arcH=Math.min(7,Math.max(3,Math.abs(x2-x1)*0.35));
-      const dash=(result==='complete')?'':'1.4,1.4';
-      const col=(result==='complete')?white:'rgba(255,255,255,0.6)';
-      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="${dash}"/>`+dot(x2,result==='complete'?ball:col);
+      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="1.4,1.2"/>`;
     }else if(type==='punt'||type==='fg'||type==='fgblock'||type==='puntreturn'||type==='onside'){
       const mx=(x1+x2)/2, arcH=Math.min(9,Math.max(4,Math.abs(x2-x1)*0.4));
-      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="#b3e5fc" stroke-width="0.9" stroke-dasharray="0.7,1.8"/>`+dot(x2,'#b3e5fc');
+      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="0.7,1.4"/>`;
     }else{
-      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${white}" stroke-width="1.2"/>`;
-      out+=`<line x1="${x1}" y1="${y+1.4}" x2="${x2}" y2="${y+1.4}" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.4,1.4"/>`+dot(x2,ball);
+      // run / default = thin black dashed straight line
+      out+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${black}" stroke-width="${sw}" stroke-dasharray="1.6,1.2"/>`;
     }
-    if((p.description||'').includes('TOUCHDOWN')){ out+=`<text x="${x2+1}" y="${y+1.5}" font-size="4">🏈</text>`; }
-    out+=`<circle cx="${x1}" cy="${y}" r="0.8" fill="rgba(255,255,255,0.7)"/></g>`;
+    if((p.description||'').includes('TOUCHDOWN')){ out+=`<text x="${x2+1.4}" y="${y+1.5}" font-size="3.4">⭐</text>`; }
+    // start tick + a small football at the end spot
+    out+=`<circle cx="${x1}" cy="${y}" r="0.7" fill="rgba(0,0,0,0.55)"/>`;
+    out+=endMark(x2);
+    out+=`</g>`;
     return out;
   },
   _driveLegend(){
     return `<div style="font-size:0.68rem;color:var(--muted);margin:2px 0 0;line-height:1.5">
-      <span class="wbadge" style="background:#eee;color:#333">— Run</span>
+      <span class="wbadge" style="background:#eee;color:#333">╌ Run</span>
       <span class="wbadge" style="background:#eee;color:#333">⌒ Pass</span>
-      <span class="wbadge" style="background:#e1f5fe;color:#0277bd">┈ Kick</span>
+      <span class="wbadge" style="background:#eee;color:#333">┈ Kick (arc)</span>
       <span class="wbadge" style="background:#ffebee;color:#c62828">— Penalty</span>
     </div>`;
   },
