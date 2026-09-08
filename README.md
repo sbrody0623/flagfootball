@@ -112,6 +112,15 @@ create table if not exists contact_messages (
   handled    boolean default false,
   created_at timestamptz default now()
 );
+
+create table if not exists invites (
+  id           bigserial primary key,
+  code         text unique not null,
+  used         boolean default false,
+  used_by_team bigint,
+  used_at      timestamptz,
+  created_at   timestamptz default now()
+);
 ```
 
 > The `plays.players` JSONB column also carries a few app-managed keys — the quarter (`_quarter`), a sync-dedupe id (`_clientUid`), return yards, and an undo snapshot — so no schema migration is needed to change those.
@@ -122,7 +131,19 @@ create table if not exists contact_messages (
 alter table teams add column if not exists security_question    text;
 alter table teams add column if not exists security_answer_hash text;
 alter table teams add column if not exists watch_code           text unique;
+
+-- Invite-only registration (create the table if it doesn't exist yet):
+create table if not exists invites (
+  id           bigserial primary key,
+  code         text unique not null,
+  used         boolean default false,
+  used_by_team bigint,
+  used_at      timestamptz,
+  created_at   timestamptz default now()
+);
 ```
+
+> **Invite-only registration is enforced once the `invites` table exists.** New teams must enter a valid, unused invite code (generated in the admin panel's **🎟️ Invites** tab) to create an account. Existing teams are unaffected — they just log in.
 
 Teams created before these columns existed simply won't have a security question — those users fall back to the "contact admin" form on the login screen. The `watch_code` column powers the live spectator view (see [Live Spectator View](#live-spectator-view)).
 
@@ -236,6 +257,7 @@ If `ADMIN_KEY` is not set, the admin panel is fully disabled and all admin endpo
    - **🔑 Reset Password** — type a new password; it's saved (bcrypt-hashed) and the team's existing logins are signed out. Give the new password to the team.
    - **🗑️ Delete Team** — permanently removes the team and all of its seasons, games, and stats (you must type the team name to confirm).
 4. The **📨 Messages** tab shows help/contact requests submitted from the login screen (see below), with the sender's name, email (as a `mailto:` link for replying), and message. Delete each once handled.
+5. The **🎟️ Invites** tab generates single-use **invite codes**. New teams cannot create an account without one — generate a code, give it to the coach, and they enter it on the Create Account screen. Used codes are marked; unused ones can be revoked.
 
 ### Contact form
 

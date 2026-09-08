@@ -139,12 +139,24 @@ function normAnswer(a) { return String(a || '').trim().toLowerCase().replace(/\s
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { teamName, loginCode, password, securityQuestion, securityAnswer } = req.body;
+    const { teamName, loginCode, password, securityQuestion, securityAnswer, inviteCode } = req.body;
     if (!teamName || !loginCode || !password) return res.status(400).json({ error: 'Team name, login code, and password are required' });
     if (loginCode.length < 3) return res.status(400).json({ error: 'Login code must be at least 3 characters' });
     if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
     if (!securityQuestion || !String(securityQuestion).trim()) return res.status(400).json({ error: 'A security question is required (for password recovery)' });
     if (!securityAnswer || !normAnswer(securityAnswer)) return res.status(400).json({ error: 'A security answer is required (for password recovery)' });
+
+    // Invite-only registration: a valid, UNUSED invite code (from the admin
+    // panel) is required to create a new team account.
+    const code = String(inviteCode || '').toLowerCase().trim();
+    if (!code) return res.status(400).json({ error: 'An invite code is required to create an account. Ask the admin for one.' });
+    let invite;
+    try {
+      const rows = await supaGet('invites', `code=eq.${encodeURIComponent(code)}&select=id,used`);
+      invite = rows && rows[0];
+    } catch (e) { return res.status(500).json({ error: 'Could not verify invite code.' }); }
+    if (!invite) return res.status(403).json({ error: 'Invalid invite code.' });
+    if (invite.used) return res.status(403).json({ error: 'That invite code has already been used.' });
 
     const existing = await supaGet('teams', `login_code=eq.${loginCode.toLowerCase()}&select=id`);
     if (existing && existing.length > 0) return res.status(400).json({ error: 'That login code is already taken.' });
@@ -158,6 +170,9 @@ app.post('/api/register', async (req, res) => {
       security_question: String(securityQuestion).trim().slice(0, 200),
       security_answer_hash: answerHash
     });
+
+    // Mark the invite used (tie it to the new team for traceability).
+    try { await supaUpdate('invites', `id=eq.${invite.id}`, { used: true, used_by_team: team.id, used_at: new Date().toISOString() }); } catch (e) {}
 
     const token = crypto.randomBytes(32).toString('hex');
     await supaInsert('sessions', { token, team_id: team.id });
@@ -501,6 +516,38 @@ app.get('/api/admin/messages', adminAuth, async (req, res) => {
 app.delete('/api/admin/messages/:id', adminAuth, async (req, res) => {
   try {
     await supaDelete('contact_messages', `id=eq.${req.params.id}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Invite codes (admin-generated; required to register a new team) ----
+
+// Generate a new invite code.
+app.post('/api/admin/invites', adminAuth, async (req, res) => {
+  try {
+    // Ensure uniqueness with a couple of retries.
+    let code, tries=0;
+    do { code = genWatchCode(); tries++;
+      const dup = await supaGet('invites', `code=eq.${code}&select=id`);
+      if (!dup || dup.length===0) break;
+    } while (tries<5);
+    const row = await supaInsert('invites', { code, used: false });
+    res.json({ id: row.id, code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List invite codes (newest first).
+app.get('/api/admin/invites', adminAuth, async (req, res) => {
+  try {
+    const rows = await supaGet('invites', 'select=id,code,used,used_by_team,used_at,created_at&order=created_at.desc');
+    res.json(rows || []);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete/revoke an invite (only meaningful for unused ones, but allow either).
+app.delete('/api/admin/invites/:id', adminAuth, async (req, res) => {
+  try {
+    await supaDelete('invites', `id=eq.${req.params.id}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

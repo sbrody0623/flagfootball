@@ -171,6 +171,7 @@ h3{font-size:1rem;margin-bottom:6px}
     </div>
     <div id="auth-register" class="hidden">
       <h3>Create Team Account</h3>
+      <div class="form-group"><label>Invite Code (required — ask the admin)</label><input type="text" id="reg-invite" placeholder="Invite code" autocapitalize="none"></div>
       <div class="form-group"><label>Team Name</label><input type="text" id="reg-team" placeholder="e.g. Thunder"></div>
       <div class="form-group"><label>Login Code (unique, for your team)</label><input type="text" id="reg-code" placeholder="e.g. thunder2026" autocapitalize="none"></div>
       <div class="form-group"><label>Password</label><input type="password" id="reg-pass" placeholder="Choose a password"></div>
@@ -499,10 +500,12 @@ h3{font-size:1rem;margin-bottom:6px}
     <div class="card">
       <button class="btn btn-primary btn-sm" onclick="Admin.showTeams()">👥 Teams</button>
       <button class="btn btn-secondary btn-sm" onclick="Admin.showMessages()">📨 Messages</button>
+      <button class="btn btn-secondary btn-sm" onclick="Admin.showInvites()">🎟️ Invites</button>
       <span style="font-size:0.85rem;color:var(--muted);margin-left:8px" id="admin-count"></span>
     </div>
     <div id="admin-teams-el"></div>
     <div id="admin-messages-el" class="hidden"></div>
+    <div id="admin-invites-el" class="hidden"></div>
   </div>
 </div>
 
@@ -740,15 +743,47 @@ const Admin={
     }catch(e){UI.showError('admin-error',e.message)}
   },
   // Toggle between the Teams and Messages views.
-  showTeams(){
-    document.getElementById('admin-teams-el').classList.remove('hidden');
-    document.getElementById('admin-messages-el').classList.add('hidden');
-    Admin.loadTeams();
+  _showView(which){
+    document.getElementById('admin-teams-el').classList.toggle('hidden',which!=='teams');
+    document.getElementById('admin-messages-el').classList.toggle('hidden',which!=='messages');
+    document.getElementById('admin-invites-el').classList.toggle('hidden',which!=='invites');
   },
-  showMessages(){
-    document.getElementById('admin-teams-el').classList.add('hidden');
-    document.getElementById('admin-messages-el').classList.remove('hidden');
-    Admin.loadMessages();
+  showTeams(){ this._showView('teams'); Admin.loadTeams(); },
+  showMessages(){ this._showView('messages'); Admin.loadMessages(); },
+  showInvites(){ this._showView('invites'); Admin.loadInvites(); },
+  async newInvite(){
+    try{
+      const data=await Admin.req('POST','/admin/invites');
+      alert('New invite code:\n\n'+data.code+'\n\nGive this to the new coach — they enter it when creating their account.');
+      Admin.loadInvites();
+    }catch(e){alert('Error: '+e.message)}
+  },
+  async loadInvites(){
+    const el=document.getElementById('admin-invites-el');
+    el.innerHTML='<div class="loading">Loading invites…</div>';
+    try{
+      const rows=await Admin.req('GET','/admin/invites');
+      const unused=rows.filter(r=>!r.used).length;
+      document.getElementById('admin-count').textContent=`${unused} unused / ${rows.length} total`;
+      let head=`<div class="card"><button class="btn btn-success btn-sm" onclick="Admin.newInvite()">➕ Generate Invite Code</button>
+        <p style="font-size:0.8rem;color:var(--muted);margin-top:6px">New teams must enter one of these codes to create an account. Each code works once.</p></div>`;
+      if(!rows.length){ el.innerHTML=head+'<div class="card">No invite codes yet.</div>'; return; }
+      el.innerHTML=head+rows.map(r=>{
+        const when=r.created_at?new Date(r.created_at).toLocaleDateString():'';
+        const status=r.used?`<span style="color:var(--danger)">Used</span>${r.used_at?' · '+new Date(r.used_at).toLocaleDateString():''}`:'<span style="color:#2e7d32">Available</span>';
+        const del=r.used?'':`<button class="btn btn-danger btn-sm" onclick="Admin.deleteInvite(${r.id})">🗑️ Revoke</button>`;
+        return `<div class="card"><h3 style="font-family:monospace;letter-spacing:1px">${r.code}</h3>
+          <p style="font-size:0.82rem;color:var(--muted);margin:2px 0 6px">${status}${when?' · created '+when:''}</p>${del}</div>`;
+      }).join('');
+    }catch(e){
+      if(/authorization/i.test(e.message)){ alert('Admin session expired — please unlock again.'); Admin.logout(); return; }
+      el.innerHTML=`<div class="card">${e.message}</div>`;
+    }
+  },
+  async deleteInvite(id){
+    if(!confirm('Revoke this unused invite code?'))return;
+    try{ await Admin.req('DELETE',`/admin/invites/${id}`); Admin.loadInvites(); }
+    catch(e){alert('Error: '+e.message)}
   },
   async logout(){
     try{await Admin.req('POST','/admin/logout')}catch(e){}
@@ -1461,10 +1496,12 @@ const Auth={
     const pass=document.getElementById('reg-pass').value;
     const secq=document.getElementById('reg-secq').value;
     const seca=document.getElementById('reg-seca').value.trim();
+    const invite=document.getElementById('reg-invite').value.trim();
+    if(!invite){UI.showError('auth-error','An invite code is required — ask the admin');return}
     if(!team||!code||!pass){UI.showError('auth-error','Fill all fields');return}
     if(!seca){UI.showError('auth-error','Answer the security question (for password recovery)');return}
     try{
-      const data=await API.post('/register',{teamName:team,loginCode:code,password:pass,securityQuestion:secq,securityAnswer:seca});
+      const data=await API.post('/register',{teamName:team,loginCode:code,password:pass,securityQuestion:secq,securityAnswer:seca,inviteCode:invite});
       API.token=data.token;localStorage.setItem('ff_token',data.token);
       localStorage.setItem('ff_team_name',data.teamName);
       Auth.onLoggedIn(data.teamName);
