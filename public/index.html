@@ -251,6 +251,13 @@ h3{font-size:1rem;margin-bottom:6px}
       <button class="btn btn-success" onclick="Account.saveSecurityQuestion()">Save Security Question</button>
     </div>
   </div>
+
+  <div style="text-align:center;margin:16px 0 4px">
+    <a href="https://www.maxpreps.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--muted);font-size:0.72rem">
+      <img src="https://www.maxpreps.com/assets/images/maxpreps-logo.png" alt="MaxPreps" style="height:22px;vertical-align:middle;margin-right:6px" onerror="this.style.display='none'">
+      Official MaxPreps Xport Enabled Stat Partner
+    </a>
+  </div>
 </div>
 
 <!-- CREATE SEASON -->
@@ -1976,6 +1983,7 @@ const Games={
       document.getElementById('summary-el').innerHTML=`
         <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
         <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p>
+        ${Stats.maxprepsBadge()}
         <button class="btn btn-primary" onclick="Stats.printBoxScore()">📄 Download / Print Box Score</button>
         <button class="btn btn-secondary" onclick="Stats.exportMaxPreps()">📤 Export for MaxPreps (.txt)</button></div>
         <div class="card"><h3>📊 Stats by Quarter</h3><div class="action-row" style="margin-bottom:10px">
@@ -2281,6 +2289,20 @@ const Stats={
     if(num==='Team'||num==='team')return 'Team';
     const pl=(typeof playerList!=='undefined'&&playerList)?playerList.find(p=>String(p.number)===String(num)):null;
     return pl?`#${num} ${pl.name}`:`#${num}`;
+  },
+
+  // "Official MaxPreps Xport Enabled Stat Partner" badge (hotlinked logo).
+  // NOTE: swap MAXPREPS_LOGO_URL for the exact image address from your MaxPreps
+  // admin page (right-click the logo -> Copy image address) if this one 404s.
+  maxprepsBadge(){
+    const MAXPREPS_LOGO_URL='https://www.maxpreps.com/assets/images/maxpreps-logo.png';
+    return `<div style="text-align:center;margin:6px 0 2px">
+      <a href="https://www.maxpreps.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--muted);font-size:0.72rem">
+        <img src="${MAXPREPS_LOGO_URL}" alt="MaxPreps" style="height:22px;vertical-align:middle;margin-right:6px"
+             onerror="this.style.display='none'">
+        Official MaxPreps Xport Enabled Stat Partner
+      </a>
+    </div>`;
   },
 
   // Build a printable, MaxPreps-style box score and open it in a new window
