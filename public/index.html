@@ -2483,11 +2483,11 @@ const Stats={
     const used=ORDER.filter(f=>nums.some(n=>P[n][f]!==undefined && P[n][f]!==0));
     const fields=['Jersey'].concat(used);
 
-    // Ask for / remember the 32-char Stat Supplier ID.
-    let supplier=localStorage.getItem('ff_maxpreps_id')||'';
-    supplier=prompt('MaxPreps Stat Supplier ID (32 chars). Leave blank for an unaccredited file:', supplier)||'';
-    supplier=supplier.trim();
-    if(supplier)localStorage.setItem('ff_maxpreps_id',supplier);
+    // MaxPreps Stat Supplier ID. Defaults to the team's registered ID so every
+    // export is accredited with no prompt. A device-saved override (if one was
+    // ever set) takes precedence.
+    const DEFAULT_MAXPREPS_ID='aeaeda0270-a75d-4e4c-ba3d-b662ccff4681';
+    let supplier=(localStorage.getItem('ff_maxpreps_id')||DEFAULT_MAXPREPS_ID).trim();
 
     const lines=[];
     if(supplier)lines.push(supplier);          // line 1 (only if accredited)
