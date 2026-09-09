@@ -2476,7 +2476,22 @@ const Stats={
         if(type==='punt'&&result==='return'&&p.flagPuller){ add(p.flagPuller,'TotalFlagPulls',1); }
         if(type==='fg'&&p.kicker){ add(p.kicker,'FieldGoalsAttempted',1); if(result==='good'){add(p.kicker,'FieldGoalsMade',1);add(p.kicker,'TotalPoints',3);} }
         if(type==='xp'&&desc.includes('Our XP')){ const k=(p.kicker&&p.kicker!=='')?p.kicker:null;
-          if(k){ add(k,'ExtraPointsAttempted',1); if(result==='good'){ add(k,'ExtraPointsMade',1); add(k,'TotalPoints', desc.includes('2pt')?2:1); } } }
+          if(k){
+            const good=(result==='good');
+            const isKick=desc.includes('kick');      // "1pt kick"
+            const is2pt=desc.includes('2pt');         // "2pt set play"
+            if(isKick){
+              // Kicked PAT -> MaxPreps Extra Points (kicking)
+              add(k,'ExtraPointsAttempted',1);
+              if(good){ add(k,'ExtraPointsMade',1); add(k,'TotalPoints',1); }
+            }else if(is2pt){
+              // 2-point conversion (set play) -> Try (2 pt)
+              if(good){ add(k,'TryMade2Pt',1); add(k,'TotalTryPoints',2); add(k,'TotalPoints',2); }
+            }else{
+              // 1-point conversion (set play) -> Try (1 pt)
+              if(good){ add(k,'TryMade1Pt',1); add(k,'TotalTryPoints',1); add(k,'TotalPoints',1); }
+            }
+          } }
       }else{ // defense
         if(type==='pass'){
           if(result==='complete'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
@@ -2501,6 +2516,7 @@ const Stats={
       'TotalFlagPulls','Sacks','SacksYardsLost','INTs','INTYards','PassesDefensed',
       'PuntNum','PuntYards','PuntLong','PuntReturnNum','PuntReturnYards','PuntReturnLong','PuntReturnedTDNum','IntReturnedTDNum',
       'FieldGoalsMade','FieldGoalsAttempted','ExtraPointsMade','ExtraPointsAttempted',
+      'TryMade1Pt','TryMade2Pt','TotalTryPoints',
       'TotalTDNum','TotalPoints'];
     const used=ORDER.filter(f=>nums.some(n=>P[n][f]!==undefined && P[n][f]!==0));
     const fields=['Jersey'].concat(used);
