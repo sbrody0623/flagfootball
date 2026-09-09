@@ -1976,7 +1976,8 @@ const Games={
       document.getElementById('summary-el').innerHTML=`
         <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
         <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p>
-        <button class="btn btn-primary" onclick="Stats.printBoxScore()">📄 Download / Print Box Score</button></div>
+        <button class="btn btn-primary" onclick="Stats.printBoxScore()">📄 Download / Print Box Score</button>
+        <button class="btn btn-secondary" onclick="Stats.exportMaxPreps()">📤 Export for MaxPreps (.txt)</button></div>
         <div class="card"><h3>📊 Stats by Quarter</h3><div class="action-row" style="margin-bottom:10px">
           <button class="btn btn-sm btn-primary" onclick="Stats.filterQtr(0)">Full Game</button>
           <button class="btn btn-sm btn-outline" onclick="Stats.filterQtr(1)">Q1</button>
@@ -2417,6 +2418,96 @@ const Stats={
       ${body}
       </body></html>`);
     win.document.close();
+  },
+
+  // ---- MaxPreps stat-import export (pipe-delimited .txt) ----
+  // Spec: line 1 = 32-char Stat Supplier ID, line 2 = pipe-delimited field names
+  // (Jersey first), then one line per athlete. Only include fields we have.
+  exportMaxPreps(){
+    const plays=window._summaryPlays||[];
+    const g=window._summaryGame||{};
+    // Aggregate per jersey number (self-contained, same rules as the box score).
+    const P={}; // per-number MaxPreps field bag
+    const ens=(n)=>{ if(!P[n])P[n]={}; return P[n]; };
+    const add=(n,f,v)=>{ const o=ens(n); o[f]=(o[f]||0)+v; };
+    const max=(n,f,v)=>{ const o=ens(n); if(v>(o[f]||0))o[f]=v; };
+    for(const play of plays){
+      const p=play.players||{};
+      const type=(play.play_type||play.playType||play.type||'').toLowerCase();
+      const result=(play.result||'').toLowerCase();
+      const yds=play.yards||0;
+      const side=play.possession||'offense';
+      const desc=(play.description||'');
+      const isTD=desc.includes('TOUCHDOWN');
+      if(side==='offense'){
+        if(type==='pass'&&p.qb){
+          if(result==='sack'){ add(p.qb,'RushingNum',1); add(p.qb,'RushingYards',-Math.abs(yds)); }
+          else{
+            add(p.qb,'PassingAtt',1);
+            if(result==='complete'){ add(p.qb,'PassingComp',1); add(p.qb,'PassingYards',yds); max(p.qb,'PassingLong',yds); if(isTD)add(p.qb,'PassingTD',1); }
+            if(result==='interception')add(p.qb,'PassingInt',1);
+          }
+        }
+        if(type==='run'&&p.carrier){ add(p.carrier,'RushingNum',1); add(p.carrier,'RushingYards',yds); max(p.carrier,'RushingLong',yds); if(isTD){add(p.carrier,'RushingTDNum',1);add(p.carrier,'TotalTDNum',1);add(p.carrier,'TotalPoints',6);} }
+        if(type==='pass'&&result==='complete'&&p.receiver){ add(p.receiver,'ReceivingNum',1); add(p.receiver,'ReceivingYards',yds); max(p.receiver,'ReceivingLong',yds); if(isTD){add(p.receiver,'ReceivingTDNum',1);add(p.receiver,'TotalTDNum',1);add(p.receiver,'TotalPoints',6);} }
+        if(type==='punt'&&p.punter){ add(p.punter,'PuntNum',1); add(p.punter,'PuntYards',yds); max(p.punter,'PuntLong',yds); }
+        if(type==='punt'&&result==='return'&&p.flagPuller){ add(p.flagPuller,'TotalFlagPulls',1); }
+        if(type==='fg'&&p.kicker){ add(p.kicker,'FieldGoalsAttempted',1); if(result==='good'){add(p.kicker,'FieldGoalsMade',1);add(p.kicker,'TotalPoints',3);} }
+        if(type==='xp'&&desc.includes('Our XP')){ const k=(p.kicker&&p.kicker!=='')?p.kicker:null;
+          if(k){ add(k,'ExtraPointsAttempted',1); if(result==='good'){ add(k,'ExtraPointsMade',1); add(k,'TotalPoints', desc.includes('2pt')?2:1); } } }
+      }else{ // defense
+        if(type==='pass'){
+          if(result==='complete'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
+          if(result==='incomplete'&&p.defender)add(p.defender,'PassesDefensed',1);
+          if(result==='interception'&&p.interceptor){ add(p.interceptor,'INTs',1); add(p.interceptor,'INTYards',(p._intRetYds!==undefined?p._intRetYds:yds)); if(isTD){add(p.interceptor,'IntReturnedTDNum',1);add(p.interceptor,'TotalTDNum',1);add(p.interceptor,'TotalPoints',6);} }
+          if(result==='sack'&&p.flagPuller){ add(p.flagPuller,'Sacks',1); add(p.flagPuller,'SacksYardsLost',Math.abs(yds)); }
+        }
+        if(type==='run'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
+        if(type==='fgblock'&&result==='blocked'&&p.blocker)add(p.blocker,'PassesDefensed',1);
+        if(type==='puntreturn'&&result==='return'&&p.returner){ add(p.returner,'PuntReturnNum',1); add(p.returner,'PuntReturnYards',(p._retYds!==undefined?p._retYds:0)); max(p.returner,'PuntReturnLong',(p._retYds!==undefined?p._retYds:0)); if(isTD){add(p.returner,'PuntReturnedTDNum',1);add(p.returner,'TotalTDNum',1);add(p.returner,'TotalPoints',6);} }
+      }
+    }
+
+    const nums=Object.keys(P);
+    if(!nums.length){ alert('No player-attributed stats to export for this game.'); return; }
+
+    // Column order (Jersey first). We include every field any player has a value
+    // for; per the spec, omit zero-only columns entirely.
+    const ORDER=['PassingComp','PassingAtt','PassingInt','PassingYards','PassingTD','PassingLong',
+      'RushingNum','RushingYards','RushingLong','RushingTDNum',
+      'ReceivingNum','ReceivingYards','ReceivingLong','ReceivingTDNum',
+      'TotalFlagPulls','Sacks','SacksYardsLost','INTs','INTYards','PassesDefensed',
+      'PuntNum','PuntYards','PuntLong','PuntReturnNum','PuntReturnYards','PuntReturnLong','PuntReturnedTDNum','IntReturnedTDNum',
+      'FieldGoalsMade','FieldGoalsAttempted','ExtraPointsMade','ExtraPointsAttempted',
+      'TotalTDNum','TotalPoints'];
+    const used=ORDER.filter(f=>nums.some(n=>P[n][f]!==undefined && P[n][f]!==0));
+    const fields=['Jersey'].concat(used);
+
+    // Ask for / remember the 32-char Stat Supplier ID.
+    let supplier=localStorage.getItem('ff_maxpreps_id')||'';
+    supplier=prompt('MaxPreps Stat Supplier ID (32 chars). Leave blank for an unaccredited file:', supplier)||'';
+    supplier=supplier.trim();
+    if(supplier)localStorage.setItem('ff_maxpreps_id',supplier);
+
+    const lines=[];
+    if(supplier)lines.push(supplier);          // line 1 (only if accredited)
+    lines.push(fields.join('|'));              // line 2: field names
+    for(const n of nums){
+      const row=[n].concat(used.map(f=>{ const v=P[n][f]; return (v===undefined)?'':String(v); }));
+      lines.push(row.join('|'));
+    }
+    const txt=lines.join('\n');
+
+    // Filename: opponent + date (no quotes/parentheses per spec).
+    const dateStr=(g.created_at?new Date(g.created_at):new Date()).toISOString().slice(0,10);
+    const opp=(g.opponent||'opponent').replace(/[^a-zA-Z0-9 _-]/g,'').replace(/\s+/g,'_');
+    const fname=`maxpreps_${opp}_${dateStr}.txt`;
+
+    // Download
+    const blob=new Blob([txt],{type:'text/plain'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},500);
   }
 };
 
