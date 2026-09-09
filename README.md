@@ -2,6 +2,8 @@
 
 A mobile-friendly web app ("Flag Stats") for tracking live flag football game stats. Multiple teams can create accounts, manage rosters, and track games in real time — all stored in a cloud database and accessible from any device. It installs as a PWA and keeps working when you lose signal.
 
+> 📖 **New here?** See the [**User Guide**](USER_GUIDE.md) for step-by-step instructions on using the whole app.
+
 ## Features
 
 - **Team Accounts** — Each team creates a login (team code + password). Multiple statisticians can log in with the same credentials.
