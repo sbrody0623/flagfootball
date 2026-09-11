@@ -1064,33 +1064,57 @@ const Watch={
     r.idx=Math.max(0,Math.min(r.plays.length-1,r.idx+delta));
     this._renderReplay();
   },
-  // Running score AFTER play index `idx`. Uses the next play's before-snapshot
-  // (which holds the score before it ran = the score after `idx`). At the last
-  // play, uses the game's final score.
-  _scoreAfter(r,idx){
-    const plays=r.plays;
-    // Look forward for the next play that has a _stateBefore snapshot.
-    for(let i=idx+1;i<plays.length;i++){
-      try{
-        const sb=plays[i].players&&plays[i].players._stateBefore?JSON.parse(plays[i].players._stateBefore):null;
-        if(sb&&typeof sb.teamScore==='number'){ return {team:sb.teamScore, opp:sb.oppScore}; }
-      }catch(e){}
+  // Points a single play added, split by team. Reads the play's own result so
+  // scoring appears exactly when the play is revealed (not one play early).
+  _playPoints(play){
+    const type=(play.play_type||play.playType||'').toLowerCase();
+    const result=(play.result||'').toLowerCase();
+    const desc=(play.description||'');
+    const us=play.possession==='offense'; // scoring side for offensive scores
+    let team=0,opp=0;
+    if(desc.includes('TOUCHDOWN')){ // 6 to whoever scored (offense unless a defensive return)
+      const weScored = us ? (result!=='interception') : (result==='interception'||result==='return'||desc.includes('RETURNED FOR TD'));
+      if(weScored)team+=6; else opp+=6;
     }
-    // No later snapshot -> we're effectively at/after the final play.
-    return {team:r.game.team_score, opp:r.game.opp_score};
+    if(type==='fg'&&result==='good'){ us?team+=3:opp+=3; }
+    if(type==='xp'&&result==='good'){ const pts=desc.includes('2pt')?2:1; if(desc.includes('Our XP'))team+=pts; else opp+=pts; }
+    if(desc.includes('SAFETY')){ // safety = 2 to the defending team
+      if(desc.includes('us +2'))team+=2; else if(desc.includes('opp +2'))opp+=2;
+    }
+    return {team,opp};
   },
+  // Cumulative score THROUGH play index `idx`. If `includeCurrent` is false, the
+  // current play's own points are excluded (used so an XP's points don't show
+  // until its result is revealed).
+  _scoreThrough(r,idx,includeCurrent){
+    let team=0,opp=0;
+    for(let i=0;i<=idx;i++){
+      if(i===idx && includeCurrent===false)continue;
+      const pt=this._playPoints(r.plays[i]);
+      team+=pt.team; opp+=pt.opp;
+    }
+    return {team,opp};
+  },
+  // Back-compat: score after a play (current included).
+  _scoreAfter(r,idx){ return this._scoreThrough(r,idx,true); },
   _renderReplay(){
     const r=this._replay; if(!r)return;
+    const cur=r.plays[r.idx];
+    // Extra points get their own presentation (try from the 3/10, arc for a kick
+    // or a drive into the end zone for a set play, with the score updating only
+    // when the result is revealed).
+    if(cur && (cur.play_type||cur.playType||'').toLowerCase()==='xp'){ return this._renderReplayXP(); }
     const body=document.getElementById('watch-body');
-    const g=r.game, cur=r.plays[r.idx];
+    const g=r.game;
     const gs=this._stateForPlay(cur,g);
     const atEnd=r.idx>=r.plays.length-1;
-    const sc=this._scoreAfter(r,r.idx);
-    const scoreGame={team_score:sc.team, opp_score:sc.opp, opponent:g.opponent};
-    const banner=atEnd?this._resultBanner(g.team_score,g.opp_score):'';
-
     // Is this a field play we can animate the ball across? (not XP/quarter)
     const animate = cur && this._isFieldPlay(cur) && !r.paused;
+    // While animating, show the score BEFORE this play; the play's own points
+    // (e.g. a TD's 6) are added on the reveal. When static, show the full score.
+    const sc=this._scoreThrough(r,r.idx, !animate);
+    const scoreGame={team_score:sc.team, opp_score:sc.opp, opponent:g.opponent};
+    const banner=atEnd?this._resultBanner(g.team_score,g.opp_score):'';
 
     body.innerHTML=banner+this._scoreboard(null,scoreGame,true)+
       `<div class="card" style="text-align:center;padding:8px">
@@ -1143,8 +1167,115 @@ const Watch={
         if(tp&&cur)tp.innerHTML=this._playCard(cur);
         const st=document.getElementById('wstatus');
         if(st){ st.outerHTML=this._statusLine(after); }
+        // Reveal any points this play scored (e.g. a TD's 6) now.
+        const afterSc=this._scoreThrough(r,r.idx,true);
+        const sb=document.querySelector('#watch-body .scoreboard');
+        if(sb){ const pts=sb.querySelectorAll('.pts'); if(pts.length===2){ pts[0].textContent=afterSc.team; pts[1].textContent=afterSc.opp; } }
       },DUR+300);
     }
+  },
+
+  // ---- Dedicated Extra-Point (try) replay ----
+  _renderReplayXP(){
+    const r=this._replay; if(!r)return;
+    const body=document.getElementById('watch-body');
+    const g=r.game, cur=r.plays[r.idx];
+    const xp=this._xpInfo(cur);
+    const atEnd=r.idx>=r.plays.length-1;
+    const doAnim = !r.paused;
+
+    // Score BEFORE the XP (so it doesn't show the point until the result reveal).
+    const before=this._scoreThrough(r, r.idx, false);
+    const scoreGame={team_score:before.team, opp_score:before.opp, opponent:g.opponent};
+    const banner=atEnd?this._resultBanner(g.team_score,g.opp_score):'';
+    const label = xp.isKick ? `${xp.points}-pt kick from the ${xp.tryYard}`
+                            : `${xp.points}-pt conversion from the ${xp.tryYard}`;
+
+    body.innerHTML=banner+this._scoreboard(null,scoreGame,true)+
+      `<div class="card" style="text-align:center;padding:8px">
+        <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(-1)">⏮ Prev</button>
+        <button class="btn btn-primary btn-sm" onclick="Watch.togglePause()">${r.paused?'▶️ Resume':'⏸ Pause'}</button>
+        <button class="btn btn-secondary btn-sm" onclick="Watch.replayStep(1)">Next ⏭</button>
+        <div style="font-size:0.8rem;color:var(--muted);margin-top:6px">Play ${r.idx+1} of ${r.plays.length}${atEnd?' · End':''} · auto-advances every 10s</div>
+      </div>`+
+      `<div id="wstatus" class="card" style="text-align:center;font-size:0.9rem;padding:8px 12px"><strong>${xp.ours?(this.teamName||'Our'):g.opponent} Extra Point</strong> — ${label}</div>`+
+      `<div id="wfield-holder">${this._xpField(xp, doAnim ? 'setup' : 'done')}</div>`+
+      `<h3 style="margin:10px 0 4px">This Play</h3>`+
+      `<div id="wthisplay">${doAnim?'<div class="wplay" style="color:var(--muted)">🏈 The try is on the way…</div>':this._playCard(cur)}</div>`;
+
+    if(doAnim){
+      // Animate the try, then reveal the result + updated score.
+      this._animateXP(xp);
+      clearTimeout(this._revealTimer);
+      this._revealTimer=setTimeout(()=>{
+        const holder=document.getElementById('wfield-holder');
+        if(holder)holder.innerHTML=this._xpField(xp,'done');
+        const tp=document.getElementById('wthisplay');
+        if(tp)tp.innerHTML=this._playCard(cur);
+        // Now add the XP points to the scoreboard (result revealed).
+        const afterSc=this._scoreThrough(r, r.idx, true);
+        const sb=document.querySelector('#watch-body .scoreboard');
+        if(sb){ const pts=sb.querySelectorAll('.pts'); if(pts.length===2){ pts[0].textContent=afterSc.team; pts[1].textContent=afterSc.opp; } }
+      }, 2300);
+    }
+  },
+  // Draw the try field. phase: 'setup' (ball at the try line, no result) or
+  // 'done' (show the arc / drive path and the outcome).
+  _xpField(xp, phase){
+    const fl=this.fieldLen||100;
+    const VW=100, VH=44;
+    // Our XP attacks right (toward opp goal at x~92); opponent's attacks left.
+    // Try line = tryYard from the target goal line.
+    const goalX = xp.ours ? 92 : 8;              // the goal being attacked
+    const dir   = xp.ours ? -1 : 1;              // from goal back toward midfield
+    const lineX = goalX + dir*(xp.tryYard/fl*84);// try LOS in viewBox units
+    const y=VH/2;
+    let svg=`<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none">`;
+    svg+=`<rect x="0" y="0" width="8" height="${VH}" fill="#b71c1c"/><rect x="92" y="0" width="8" height="${VH}" fill="#0d47a1"/>`;
+    svg+=`<line x1="8" y1="0" x2="8" y2="${VH}" stroke="#fff" stroke-width="0.6"/><line x1="92" y1="0" x2="92" y2="${VH}" stroke="#fff" stroke-width="0.6"/>`;
+    svg+=`<text x="4" y="${y+1.2}" text-anchor="middle" class="ez-g">G</text><text x="96" y="${y+1.2}" text-anchor="middle" class="ez-g">G</text>`;
+    // try line-of-scrimmage marker
+    svg+=`<line x1="${lineX}" y1="6" x2="${lineX}" y2="${VH-6}" stroke="#ffeb3b" stroke-width="0.5"/>`;
+    if(phase==='done'){
+      const endX=goalX; // into/through the end zone
+      const good=xp.good;
+      const col=good?'#111':'rgba(0,0,0,0.4)';
+      if(xp.isKick){
+        // Arc up and over toward the goal (uprights)
+        const mx=(lineX+endX)/2, arcH=13;
+        svg+=`<path d="M ${lineX} ${y} Q ${mx} ${y-arcH} ${endX} ${y-4}" fill="none" stroke="${col}" stroke-width="0.6" stroke-dasharray="1.4,1.2"/>`;
+        svg+=`<text x="${goalX+(xp.ours?2:-2)}" y="${y-5}" text-anchor="middle" style="font-size:4px">${good?'🏈':'❌'}</text>`;
+      }else{
+        // Set play: straight drive into the end zone (run/pass line)
+        svg+=`<line x1="${lineX}" y1="${y}" x2="${endX}" y2="${y}" stroke="${col}" stroke-width="0.7" stroke-dasharray="1.6,1.2"/>`;
+        svg+=`<text x="${goalX+(xp.ours?2:-2)}" y="${y+1.5}" text-anchor="middle" style="font-size:4px">${good?'🏈':'❌'}</text>`;
+      }
+    }
+    // ball at the try line (its id lets the animation move it)
+    svg+=`<g id="wball" transform="translate(${lineX.toFixed(2)},${y})">${this._footballSvg()}</g>`;
+    svg+=`</svg>`;
+    const kind = xp.isKick ? 'Kick' : (xp.points===2?'2-pt set play':'1-pt set play');
+    return `<div style="font-size:0.78rem;color:var(--muted);margin:6px 0 2px">Extra Point — ${kind}</div><div class="wfieldwrap">${svg}</div>`;
+  },
+  // Move the football along the try path (arc for kick, straight for set play).
+  _animateXP(xp){
+    const fl=this.fieldLen||100, VH=44, y=VH/2;
+    const goalX = xp.ours ? 92 : 8;
+    const dir   = xp.ours ? -1 : 1;
+    const lineX = goalX + dir*(xp.tryYard/fl*84);
+    const endX=goalX;
+    const DUR=1800, t0=performance.now();
+    const arc = xp.isKick ? 13 : 0;
+    const tick=(now)=>{
+      const ball=document.getElementById('wball'); if(!ball)return;
+      const k=Math.min(1,(now-t0)/DUR);
+      const e=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+      const cx=lineX+(endX-lineX)*e;
+      const cy=y - arc*Math.sin(Math.PI*e);   // parabolic lift for a kick
+      ball.setAttribute('transform',`translate(${cx.toFixed(2)},${cy.toFixed(2)})`);
+      if(k<1 && this._replay && (this._replay.plays[this._replay.idx]||{}) && (this._replay.plays[this._replay.idx].play_type||this._replay.plays[this._replay.idx].playType||'').toLowerCase()==='xp'){ requestAnimationFrame(tick); }
+    };
+    requestAnimationFrame(tick);
   },
   // Repaint the field with the current play's path shown (no animation) — used
   // after the ball finishes gliding. Replaces the whole #wfield-holder block.
@@ -1244,6 +1375,23 @@ const Watch={
   _isFieldPlay(p){
     const t=(p.play_type||p.playType||'').toLowerCase();
     return t!=='xp' && t!=='quarter';
+  },
+  // Parse an extra-point/try play from its description.
+  //  isKick   — kicked PAT (arc), else a set-play run/pass into the end zone
+  //  points   — 1 or 2
+  //  good     — was it successful
+  //  ours     — our team's XP (attacking right) vs opponent's (attacking left)
+  //  tryYard  — line of scrimmage for the try: 3 for 1-pt, 10 for 2-pt (from the goal)
+  _xpInfo(p){
+    const d=(p.description||'');
+    const points=d.includes('2pt')?2:1;
+    return {
+      isKick: d.includes('kick'),
+      points,
+      good: (p.result||'').toLowerCase()==='good',
+      ours: d.includes('Our XP'),
+      tryYard: points===2?10:3
+    };
   },
   // Start/end yard of a play in OUR frame (our team always attacks right).
   _playYards(p,fl){
