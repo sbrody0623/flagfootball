@@ -1617,7 +1617,19 @@ const Watch={
       const num=pl[k]; const name=this.roster[String(num)];
       return `<span class="wbadge">${this.ROLES[k]} #${num}${name?' '+name:''}</span>`;
     }).join('');
-    return `<div class="wplay"><div class="desc">${desc}</div>${who?`<div class="who">${who}</div>`:''}</div>`;
+    // Punt yardage breakdown: punt distance + return yards.
+    let yardLine='';
+    const t=(p.play_type||p.playType||'').toLowerCase();
+    if(t==='punt'||t==='puntreturn'){
+      const dist=p.yards||0;
+      const retY=(pl._retYds!=null)?pl._retYds:0;
+      const parts=[`<span class="wbadge" style="background:#e8f5e9;color:#2e7d32">Punt ${dist} yds</span>`];
+      if((p.result||'').toLowerCase()==='return'){ parts.push(`<span class="wbadge" style="background:#e3f2fd;color:#1565c0">Return ${retY} yds</span>`); }
+      const net=dist-retY;
+      parts.push(`<span class="wbadge" style="background:#f2f4f7;color:#333">Net ${net} yds</span>`);
+      yardLine=`<div style="margin-top:4px">${parts.join('')}</div>`;
+    }
+    return `<div class="wplay"><div class="desc">${desc}</div>${yardLine}${who?`<div class="who">${who}</div>`:''}</div>`;
   }
 };
 
