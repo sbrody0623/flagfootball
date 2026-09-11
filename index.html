@@ -1131,7 +1131,7 @@ const Watch={
       // ball sit at the post-play spot, matching the status line.
       this._unifiedField(animate?gs:this._stateAfterPlay(r,r.idx), r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
       `<h3 style="margin:10px 0 4px">This Play</h3>`+
-      `<div id="wthisplay">${animate?'<div class="wplay" style="color:var(--muted)">🏈 The play is developing…</div>':(cur?this._playCard(cur):'<div class="wplay">—</div>')}</div>`;
+      `<div id="wthisplay">${animate?('<div class="wplay" style="color:var(--muted)">'+this._pendingLabel(cur,gs)+'</div>'):(cur?this._playCard(cur):'<div class="wplay">—</div>')}</div>`;
 
     // Animate: after a beat, move the ball to the end spot, draw the path, and
     // reveal the result. This creates the "watch the play, then see the result".
@@ -1575,6 +1575,16 @@ const Watch={
       <span class="wbadge" style="background:#eee;color:#333">┈ Kick (arc)</span>
       <span class="wbadge" style="background:#ffebee;color:#c62828">— Penalty</span>
     </div>`;
+  },
+  // Message shown while a play is developing (before its result), reflecting the
+  // play type so 4th-down kicks read "Punting…" / "Field goal attempt…".
+  _pendingLabel(p,gs){
+    const t=(p&&(p.play_type||p.playType)||'').toLowerCase();
+    const down=(gs&&gs.down)||(p&&p.down_before)||1;
+    const fourth=down>=4?'4th down — ':'';
+    if(t==='punt'||t==='puntreturn')return '🦵 '+fourth+'Punting…';
+    if(t==='fg'||t==='fgblock')return '🏈 '+fourth+'Field goal attempt…';
+    return '🏈 The play is developing…';
   },
   _playCard(p){
     const desc=p.description||p.desc||'';
@@ -2883,6 +2893,8 @@ const Flow={
   restart(){
     this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null};
     if(typeof FieldPick!=='undefined')FieldPick.mode=null;
+    // Clear any "Punting…/FG attempt…" indicator by restoring the real down bar.
+    if(typeof GameUI!=='undefined' && currentGame){ try{ GameUI.refresh(); }catch(e){} }
     document.getElementById('step-type').classList.remove('hidden');
     document.getElementById('step-result').classList.add('hidden');
     document.getElementById('step-player').classList.add('hidden');
@@ -2907,7 +2919,17 @@ const Flow={
     }
   },
 
-  pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');document.getElementById('cancel-play-btn').classList.remove('hidden');this.showResults(t)},
+  pickType(t){this.current.type=t;document.getElementById('step-type').classList.add('hidden');document.getElementById('cancel-play-btn').classList.remove('hidden');
+    // Show an "in progress" note in the down bar for kicking plays until the
+    // play is actually recorded (cleared by GameUI.refresh / Flow.restart).
+    const el=document.getElementById('g-down');
+    if(el){
+      if(t==='punt')el.innerHTML='🦵 Punting…';
+      else if(t==='fg')el.innerHTML='🏈 Field Goal Attempt…';
+      else if(t==='puntreturn')el.innerHTML='🦵 Punt — returning…';
+      else if(t==='fgblock')el.innerHTML='🏈 FG — defending…';
+    }
+    this.showResults(t)},
 
   startFreePunt(){
     // Clear the flag and run the normal punt / punt-return flow from the current spot
