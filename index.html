@@ -1473,7 +1473,23 @@ const Watch={
       const {startYd,endYd}=this._playYards(p,fl);
       const isCurrent = d.idx===upto;
       const reveal = !(opts.animateLast && isCurrent && opts.hideCurrentPath);
-      svg+=this._segment(x(startYd), x(endYd), y, (p.play_type||p.playType||'').toLowerCase(), (p.result||'').toLowerCase(), p, {faded:!isCurrent, hidden:!reveal});
+      // For punts, precompute the landing spot (LOS + punt distance) and the
+      // return end, in OUR-frame %s, so _segment can draw arc + return run.
+      let punt=null;
+      const ptype=(p.play_type||p.playType||'').toLowerCase();
+      if(ptype==='punt'||ptype==='puntreturn'){
+        const before=(p.ball_pos_before!=null?p.ball_pos_before:0);
+        const dist=p.yards||0;                                   // punt distance
+        const retY=(p.players&&p.players._retYds!=null)?p.players._retYds:0;
+        // In the possessing (kicking) team's frame, the punt goes downfield (+dist);
+        // the receiving team then returns back toward the kicker (−retY from landing).
+        const landPoss=before+dist;
+        const losX=x(this._toOurFrame(before,p.possession,fl));
+        const landX=x(this._toOurFrame(landPoss,p.possession,fl));
+        const endX2=x(this._toOurFrame(landPoss-retY,p.possession,fl)); // returner ends here
+        punt={losX,landX,endX2,hasReturn:( (p.result||'').toLowerCase()==='return' && retY>0)};
+      }
+      svg+=this._segment(x(startYd), x(endYd), y, ptype, (p.result||'').toLowerCase(), p, {faded:!isCurrent, hidden:!reveal, punt});
     });
 
     // Ball marker (small football): position at the current play's END
@@ -1519,7 +1535,26 @@ const Watch={
     }else if(type==='pass'){
       const mx=(x1+x2)/2, arcH=Math.min(7,Math.max(3,Math.abs(x2-x1)*0.35));
       out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="1.4,1.2"/>`;
-    }else if(type==='punt'||type==='fg'||type==='fgblock'||type==='puntreturn'||type==='onside'){
+    }else if((type==='punt'||type==='puntreturn') && style.punt){
+      // Two-part punt: ARC for the punt distance (LOS -> landing), then a RUN
+      // LINE for the return (landing -> returner's end spot).
+      const pu=style.punt;
+      const mx=(pu.losX+pu.landX)/2, arcH=Math.min(11,Math.max(5,Math.abs(pu.landX-pu.losX)*0.45));
+      out+=`<path d="M ${pu.losX} ${y} Q ${mx} ${y-arcH} ${pu.landX} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="0.7,1.4"/>`;
+      // small marker where the ball landed
+      out+=`<circle cx="${pu.landX}" cy="${y}" r="0.6" fill="rgba(0,0,0,0.5)"/>`;
+      if(pu.hasReturn){
+        // return run line (slightly offset so it's distinct from the arc landing)
+        out+=`<line x1="${pu.landX}" y1="${y}" x2="${pu.endX2}" y2="${y}" stroke="${black}" stroke-width="${sw}" stroke-dasharray="1.6,1.2"/>`;
+        out+=`<g transform="translate(${pu.endX2},${y})">${this._footballSvg()}</g>`;
+      }else{
+        out+=`<g transform="translate(${pu.landX},${y})">${this._footballSvg()}</g>`;
+      }
+      if((p.description||'').includes('TOUCHDOWN')){ out+=`<text x="${(pu.endX2||pu.landX)+1.4}" y="${y+1.5}" font-size="3.4">⭐</text>`; }
+      out+=`<circle cx="${pu.losX}" cy="${y}" r="0.7" fill="rgba(0,0,0,0.55)"/>`;
+      out+=`</g>`;
+      return out;
+    }else if(type==='fg'||type==='fgblock'||type==='onside'||type==='punt'||type==='puntreturn'){
       const mx=(x1+x2)/2, arcH=Math.min(9,Math.max(4,Math.abs(x2-x1)*0.4));
       out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="0.7,1.4"/>`;
     }else{
