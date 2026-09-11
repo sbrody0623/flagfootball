@@ -1242,18 +1242,20 @@ const Watch={
     svg+=`<text x="4" y="${y+1.2}" text-anchor="middle" class="ez-g">G</text><text x="96" y="${y+1.2}" text-anchor="middle" class="ez-g">G</text>`;
     // try line-of-scrimmage marker
     svg+=`<line x1="${lineX}" y1="6" x2="${lineX}" y2="${VH-6}" stroke="#ffeb3b" stroke-width="0.5"/>`;
+    // Goalposts sit at the BACK of the end zone; the goal LINE is the front.
+    const backX = xp.ours ? 99 : 1;   // back of the target end zone (goalposts)
     if(phase==='done'){
-      const endX=goalX; // into/through the end zone
       const good=xp.good;
       const col=good?'#111':'rgba(0,0,0,0.4)';
       if(xp.isKick){
-        // Arc up and over toward the goal (uprights)
-        const mx=(lineX+endX)/2, arcH=13;
-        svg+=`<path d="M ${lineX} ${y} Q ${mx} ${y-arcH} ${endX} ${y-4}" fill="none" stroke="${col}" stroke-width="0.6" stroke-dasharray="1.4,1.2"/>`;
-        svg+=`<text x="${goalX+(xp.ours?2:-2)}" y="${y-5}" text-anchor="middle" style="font-size:4px">${good?'🏈':'❌'}</text>`;
+        // Kick arcs high, through the uprights at the BACK of the end zone
+        // (same as a field goal — not stopping at the goal line/front).
+        const mx=(lineX+backX)/2, arcH=15;
+        svg+=`<path d="M ${lineX} ${y} Q ${mx} ${y-arcH} ${backX} ${y-3}" fill="none" stroke="${col}" stroke-width="0.6" stroke-dasharray="1.4,1.2"/>`;
+        svg+=`<text x="${backX+(xp.ours?-1:1)}" y="${y-4}" text-anchor="middle" style="font-size:4px">${good?'🏈':'❌'}</text>`;
       }else{
-        // Set play: straight drive into the end zone (run/pass line)
-        svg+=`<line x1="${lineX}" y1="${y}" x2="${endX}" y2="${y}" stroke="${col}" stroke-width="0.7" stroke-dasharray="1.6,1.2"/>`;
+        // Set play: straight drive into the end zone, crossing the goal LINE (front)
+        svg+=`<line x1="${lineX}" y1="${y}" x2="${goalX}" y2="${y}" stroke="${col}" stroke-width="0.7" stroke-dasharray="1.6,1.2"/>`;
         svg+=`<text x="${goalX+(xp.ours?2:-2)}" y="${y+1.5}" text-anchor="middle" style="font-size:4px">${good?'🏈':'❌'}</text>`;
       }
     }
@@ -1269,9 +1271,12 @@ const Watch={
     const goalX = xp.ours ? 92 : 8;
     const dir   = xp.ours ? -1 : 1;
     const lineX = goalX + dir*(xp.tryYard/fl*84);
-    const endX=goalX;
+    // Kick flies to the goalposts at the BACK of the end zone; a set play stops
+    // at the goal line (front).
+    const backX = xp.ours ? 99 : 1;
+    const endX = xp.isKick ? backX : goalX;
     const DUR=1800, t0=performance.now();
-    const arc = xp.isKick ? 13 : 0;
+    const arc = xp.isKick ? 15 : 0;
     const tick=(now)=>{
       const ball=document.getElementById('wball'); if(!ball)return;
       const k=Math.min(1,(now-t0)/DUR);
