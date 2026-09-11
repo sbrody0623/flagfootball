@@ -1352,8 +1352,18 @@ const Watch={
     const fl=gs.fieldLength||this.fieldLen;
     const toGo=(gs.firstDownLine!=null&&gs.firstDownLine>=fl)?'Goal':(gs.firstDownLine!=null?(gs.firstDownLine-gs.ballPos):'');
     const poss=gs.possession==='offense'?'🏈 Our Ball':'🛡️ Their Ball';
-    return `<div id="wstatus" class="card" style="display:flex;justify-content:space-between;font-size:0.9rem;padding:8px 12px">
-      <span><strong>${qlbl}</strong></span><span>${dn}${toGo!==''?' & '+toGo:''}</span><span>${poss}</span></div>`;
+    const ydLbl=this._ydLabel(gs.ballPos,fl);
+    return `<div id="wstatus" class="card" style="display:flex;justify-content:space-between;gap:6px;font-size:0.9rem;padding:8px 12px">
+      <span><strong>${qlbl}</strong></span><span>${dn}${toGo!==''?' & '+toGo:''}</span>${ydLbl?`<span>${ydLbl}</span>`:''}<span>${poss}</span></div>`;
+  },
+  // Ball position as a yard-line label (in the possessing team's frame):
+  // own half -> "Own X", past midfield -> "Opp X", exactly half -> "Midfield".
+  _ydLabel(ballPos,fl){
+    if(ballPos==null||fl==null)return '';
+    const mid=fl/2;
+    if(ballPos===mid)return '🏈 50';
+    if(ballPos<mid)return '🏈 Own '+ballPos;
+    return '🏈 Opp '+(fl-ballPos);
   },
   // State AFTER play index `idx` = the before-snapshot of the next play with one,
   // else the play's own end (ballPos + yards). Used to update down & distance
