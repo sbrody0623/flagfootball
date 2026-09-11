@@ -1137,20 +1137,26 @@ const Watch={
     // reveal the result. This creates the "watch the play, then see the result".
     if(animate){
       const fl=gs.fieldLength||this.fieldLen||100;
+      const ptype=(cur.play_type||cur.playType||'').toLowerCase();
       const yy=this._playYards(cur,fl);
-      const startX=this._pct(yy.startYd,fl), endX=this._pct(yy.endYd,fl);
+      let startX=this._pct(yy.startYd,fl), endX=this._pct(yy.endYd,fl);
+      // Field goals fly to the GOALPOSTS at the back of the target end zone,
+      // with a high parabolic arc (not a flat glide to the play's end spot).
+      const isFG=(ptype==='fg'||ptype==='fgblock');
+      let arcLift=0;
+      if(isFG){ const attackRight=(cur.possession||'offense')==='offense'; endX=attackRight?99:1; arcLift=15; }
       const DUR=2000;
-      // JS tween of the ball's cx (reliable across browsers vs CSS on SVG cx).
       const by=(document.getElementById('wball')&&document.getElementById('wball').getAttribute('transform')||'').match(/,([-\d.]+)\)/);
-      const yPos=by?by[1]:(gs && 22);
+      const yBase=by?parseFloat(by[1]):22;
       const t0=performance.now();
       const tick=(now)=>{
         const ball=document.getElementById('wball');
         if(!ball)return; // view changed; stop
         const k=Math.min(1,(now-t0)/DUR);
         const eased=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2; // easeInOutQuad
-        const cx=(startX+(endX-startX)*eased).toFixed(2);
-        ball.setAttribute('transform', `translate(${cx},${yPos})`);
+        const cx=(startX+(endX-startX)*eased);
+        const cy=yBase - (arcLift*Math.sin(Math.PI*eased)); // lift for the FG arc
+        ball.setAttribute('transform', `translate(${cx.toFixed(2)},${cy.toFixed(2)})`);
         if(k<1 && this._replay && this._replay.idx===r.idx){ requestAnimationFrame(tick); }
       };
       requestAnimationFrame(tick);
@@ -1554,7 +1560,20 @@ const Watch={
       out+=`<circle cx="${pu.losX}" cy="${y}" r="0.7" fill="rgba(0,0,0,0.55)"/>`;
       out+=`</g>`;
       return out;
-    }else if(type==='fg'||type==='fgblock'||type==='onside'||type==='punt'||type==='puntreturn'){
+    }else if(type==='fg'||type==='fgblock'){
+      // Field goal: kick arcs toward the GOALPOSTS at the BACK of the target end
+      // zone (not just the goal line). Our FG (offense) targets the right end
+      // zone back edge (~99%); an opponent FG targets the left (~1%).
+      const attackRight = (p.possession||'offense')==='offense';
+      const postX = attackRight ? 99 : 1;
+      const mx=(x1+postX)/2, arcH=15;   // higher arc for a kick through the uprights
+      out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${postX} ${y-3}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="0.7,1.4"/>`;
+      // goalpost marker + made/miss indicator at the back of the end zone
+      out+=`<text x="${postX}" y="${y-3.5}" text-anchor="middle" style="font-size:3.4">${result==='good'?'🏈':(result==='wide'||result==='short'||result==='blocked'?'❌':'🏈')}</text>`;
+      out+=`<circle cx="${x1}" cy="${y}" r="0.7" fill="rgba(0,0,0,0.55)"/>`;
+      out+=`</g>`;
+      return out;
+    }else if(type==='onside'||type==='punt'||type==='puntreturn'){
       const mx=(x1+x2)/2, arcH=Math.min(9,Math.max(4,Math.abs(x2-x1)*0.4));
       out+=`<path d="M ${x1} ${y} Q ${mx} ${y-arcH} ${x2} ${y}" fill="none" stroke="${black}" stroke-width="${sw}" stroke-dasharray="0.7,1.4"/>`;
     }else{
