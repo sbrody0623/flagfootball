@@ -110,11 +110,11 @@ h3{font-size:1rem;margin-bottom:6px}
 .wfieldwrap .ez-g{fill:#fff;font-size:2.8px;font-weight:800}
 .wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
 /* Sticky mini-scoreboard for the watch view (always visible while scrolling) */
-#watch-mini{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;margin:0 0 8px;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 6px rgba(0,0,0,0.25)}
-#watch-mini .mini-team{display:flex;align-items:center;gap:6px;font-size:0.85rem;font-weight:600;min-width:0}
-#watch-mini .mini-team .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
-#watch-mini .mini-pts{font-size:1.25rem;font-weight:800}
-#watch-mini .mini-mid{font-size:0.72rem;opacity:0.85;text-align:center;white-space:nowrap;padding:0 6px}
+#watch-mini{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;margin:0 0 8px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+#watch-mini .mini-team{display:flex;align-items:center;gap:8px;font-size:0.95rem;font-weight:600;min-width:0}
+#watch-mini .mini-team .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32vw}
+#watch-mini .mini-pts{font-size:1.6rem;font-weight:800}
+#watch-mini .mini-mid{font-size:0.7rem;opacity:0.8;text-align:center;white-space:nowrap;padding:0 8px}
 .wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
 .wplay .desc{font-weight:600}
@@ -1321,13 +1321,11 @@ const Watch={
   // ---- SHARED RENDER HELPERS ----
   _scoreboard(teamName,g,replay){
     const us=this.teamName||teamName||'Us';
-    // Keep the always-visible sticky mini-scoreboard in sync whenever we render.
+    // The sticky mini-scoreboard (#watch-mini) is the always-visible score. We
+    // drive it here and DON'T render a second big scoreboard in the body, so the
+    // score is never lost when scrolling (esp. landscape) and there's no dupe.
     this._miniScore(us,g.team_score,g.opponent,g.opp_score,replay?'REPLAY':'LIVE');
-    return `<div class="scoreboard">
-      <div class="team"><div class="name">${us}</div><div class="pts">${g.team_score}</div></div>
-      <div class="vs">${replay?'REPLAY':'VS'}</div>
-      <div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div>
-    </div>`;
+    return '';
   },
   // Render/update the sticky mini-scoreboard bar (always visible while scrolling).
   _miniScore(usName,usScore,oppName,oppScore,mid){
