@@ -17,8 +17,8 @@
 :root{--primary:#1a73e8;--primary-dark:#1557b0;--danger:#dc3545;--success:#28a745;--warning:#ffc107;--bg:#f0f2f5;--card:#ffffff;--text:#212529;--muted:#6c757d;--border:#dee2e6;--radius:10px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
-.app-header{background:var(--bg);color:var(--primary);text-align:center;font-size:1.25rem;font-weight:800;padding:12px 10px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;z-index:50}
-@media(max-width:400px){.app-header{font-size:1.05rem}}
+.app-header{background:var(--bg);color:var(--primary);text-align:center;font-size:1.05rem;font-weight:800;padding:9px 10px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;z-index:50}
+@media(max-width:400px){.app-header{font-size:0.95rem}}
 .container{max-width:500px;margin:0 auto;padding:10px;padding-bottom:60px}
 h1{font-size:1.4rem;text-align:center;padding:14px 0 6px;color:var(--primary)}
 h2{font-size:1.15rem;margin-bottom:10px}
@@ -144,7 +144,7 @@ h3{font-size:1rem;margin-bottom:6px}
 @media(min-width:600px){
   .container{max-width:680px;padding:16px;padding-bottom:64px}
   body{font-size:16px}
-  .app-header{font-size:1.5rem;padding:16px 12px 10px}
+  .app-header{font-size:1.2rem;padding:11px 12px 8px}
   h2{font-size:1.3rem}
   h3{font-size:1.1rem}
   .btn{font-size:1.05rem;padding:14px 18px}
@@ -157,7 +157,7 @@ h3{font-size:1rem;margin-bottom:6px}
 }
 @media(min-width:1024px){
   .container{max-width:760px;padding:20px;padding-bottom:70px}
-  .app-header{font-size:1.7rem}
+  .app-header{font-size:1.35rem}
   .play-btn{padding:26px 14px}
   .wfieldwrap svg{max-height:260px}
 }
@@ -557,7 +557,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v54</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v55</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -1143,7 +1143,7 @@ const Watch={
       // hidden). When static, draw from the AFTER state so the first-down line +
       // ball sit at the post-play spot, matching the status line.
       this._unifiedField(animate?gs:this._stateAfterPlay(r,r.idx), r.plays, r.idx, {animateLast:true, ballAtStart:animate, hideCurrentPath:animate})+
-      `<h3 style="margin:10px 0 4px">This Play</h3>`+
+      `<div style="font-size:0.75rem;font-weight:700;color:var(--muted);margin:6px 0 3px;text-transform:uppercase;letter-spacing:0.03em">This Play</div>`+
       `<div id="wthisplay">${animate?('<div class="wplay" style="color:var(--muted)">'+this._pendingLabel(cur,gs)+'</div>'):(cur?this._playCard(cur):'<div class="wplay">—</div>')}</div>`;
 
     // Animate: after a beat, move the ball to the end spot, draw the path, and
@@ -1220,7 +1220,7 @@ const Watch={
       </div>`+
       `<div id="wstatus" class="card" style="text-align:center;font-size:0.9rem;padding:8px 12px"><strong>${xp.ours?(this.teamName||'Our'):g.opponent} Extra Point</strong> — ${label}</div>`+
       `<div id="wfield-holder">${this._xpField(xp, doAnim ? 'setup' : 'done')}</div>`+
-      `<h3 style="margin:10px 0 4px">This Play</h3>`+
+      `<div style="font-size:0.75rem;font-weight:700;color:var(--muted);margin:6px 0 3px;text-transform:uppercase;letter-spacing:0.03em">This Play</div>`+
       `<div id="wthisplay">${doAnim?'<div class="wplay" style="color:var(--muted)">🏈 The try is on the way…</div>':this._playCard(cur)}</div>`;
 
     if(doAnim){
