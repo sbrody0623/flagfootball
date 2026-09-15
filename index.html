@@ -557,7 +557,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v53</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v54</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -1561,8 +1561,14 @@ const Watch={
     svg+=`</svg>`;
 
     const q=(plays&&upto>=0&&plays[upto]&&plays[upto].quarter)||'';
-    return `<div id="wfield-holder"><div style="font-size:0.78rem;color:var(--muted);margin:6px 0 2px">Current drive${q?` · Q${q}`:''}</div>`+
-      `<div class="wfieldwrap">${svg}</div>${this._driveLegend()}</div>`;
+    // Put the "Current drive" label and the legend on ONE row above the field to
+    // save vertical space (less scrolling to see the field + This Play together).
+    return `<div id="wfield-holder">`+
+      `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;margin:6px 0 2px">`+
+        `<span style="font-size:0.78rem;color:var(--muted);white-space:nowrap">Current drive${q?` · Q${q}`:''}</span>`+
+        `<span>${this._driveLegend()}</span>`+
+      `</div>`+
+      `<div class="wfieldwrap">${svg}</div></div>`;
   },
   // A small football glyph, centered at (0,0), for use inside a translated <g>.
   _footballSvg(){
@@ -1635,12 +1641,12 @@ const Watch={
     return out;
   },
   _driveLegend(){
-    return `<div style="font-size:0.68rem;color:var(--muted);margin:2px 0 0;line-height:1.5">
-      <span class="wbadge" style="background:#eee;color:#333">╌ Run</span>
-      <span class="wbadge" style="background:#eee;color:#333">⌒ Pass</span>
-      <span class="wbadge" style="background:#eee;color:#333">┈ Kick (arc)</span>
-      <span class="wbadge" style="background:#ffebee;color:#c62828">— Penalty</span>
-    </div>`;
+    return `<span style="font-size:0.62rem;color:var(--muted);white-space:nowrap">`+
+      `<span class="wbadge" style="background:#eee;color:#333;padding:0 5px">╌ Run</span>`+
+      `<span class="wbadge" style="background:#eee;color:#333;padding:0 5px">⌒ Pass</span>`+
+      `<span class="wbadge" style="background:#eee;color:#333;padding:0 5px">┈ Kick</span>`+
+      `<span class="wbadge" style="background:#ffebee;color:#c62828;padding:0 5px">— Pen</span>`+
+    `</span>`;
   },
   // Message shown while a play is developing (before its result), reflecting the
   // play type so 4th-down kicks read "Punting…" / "Field goal attempt…".
