@@ -109,6 +109,12 @@ h3{font-size:1rem;margin-bottom:6px}
 .wfieldwrap .ez-lbl{fill:#fff;font-size:3px;font-weight:700;opacity:0.9}
 .wfieldwrap .ez-g{fill:#fff;font-size:2.8px;font-weight:800}
 .wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
+/* Sticky mini-scoreboard for the watch view (always visible while scrolling) */
+#watch-mini{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;margin:0 0 8px;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 6px rgba(0,0,0,0.25)}
+#watch-mini .mini-team{display:flex;align-items:center;gap:6px;font-size:0.85rem;font-weight:600;min-width:0}
+#watch-mini .mini-team .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+#watch-mini .mini-pts{font-size:1.25rem;font-weight:800}
+#watch-mini .mini-mid{font-size:0.72rem;opacity:0.85;text-align:center;white-space:nowrap;padding:0 6px}
 .wball{}
 .wplay{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
 .wplay .desc{font-weight:600}
@@ -557,6 +563,8 @@ h3{font-size:1rem;margin-bottom:6px}
       <button class="btn btn-primary btn-sm" id="watch-tab-live" onclick="Watch.showLive()">🔴 Live</button>
       <button class="btn btn-secondary btn-sm" id="watch-tab-replay" onclick="Watch.showReplayList()">▶️ Replay a Game</button>
     </div>
+    <!-- Sticky mini-scoreboard: stays visible while scrolling (esp. in landscape) -->
+    <div id="watch-mini" class="hidden"></div>
     <div id="watch-body"></div>
   </div>
   <div id="watch-thanks" class="hidden"></div>
@@ -973,6 +981,7 @@ const Watch={
       this.roster=data.roster||{};
       const body=document.getElementById('watch-body');
       if(!data.live){
+        this._hideMini();
         body.innerHTML='<div class="card" style="text-align:center">No live game right now.<br><span style="color:var(--muted);font-size:0.85rem">This page updates automatically when a game starts. Or tap ▶️ Replay a Game.</span></div>';
         return;
       }
@@ -1014,6 +1023,7 @@ const Watch={
   // ---- REPLAY MODE ----
   async showReplayList(){
     this._stopAll(); this.mode='replay'; this._setTab('replay');
+    this._hideMini();
     const body=document.getElementById('watch-body');
     body.innerHTML='<div class="loading">Loading games…</div>';
     try{
@@ -1177,6 +1187,7 @@ const Watch={
         const afterSc=this._scoreThrough(r,r.idx,true);
         const sb=document.querySelector('#watch-body .scoreboard');
         if(sb){ const pts=sb.querySelectorAll('.pts'); if(pts.length===2){ pts[0].textContent=afterSc.team; pts[1].textContent=afterSc.opp; } }
+        this._miniSetScores(afterSc.team,afterSc.opp);
       },DUR+300);
     }
   },
@@ -1222,6 +1233,7 @@ const Watch={
         const afterSc=this._scoreThrough(r, r.idx, true);
         const sb=document.querySelector('#watch-body .scoreboard');
         if(sb){ const pts=sb.querySelectorAll('.pts'); if(pts.length===2){ pts[0].textContent=afterSc.team; pts[1].textContent=afterSc.opp; } }
+        this._miniSetScores(afterSc.team,afterSc.opp);
       }, 2300);
     }
   },
@@ -1309,11 +1321,30 @@ const Watch={
   // ---- SHARED RENDER HELPERS ----
   _scoreboard(teamName,g,replay){
     const us=this.teamName||teamName||'Us';
+    // Keep the always-visible sticky mini-scoreboard in sync whenever we render.
+    this._miniScore(us,g.team_score,g.opponent,g.opp_score,replay?'REPLAY':'LIVE');
     return `<div class="scoreboard">
       <div class="team"><div class="name">${us}</div><div class="pts">${g.team_score}</div></div>
       <div class="vs">${replay?'REPLAY':'VS'}</div>
       <div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div>
     </div>`;
+  },
+  // Render/update the sticky mini-scoreboard bar (always visible while scrolling).
+  _miniScore(usName,usScore,oppName,oppScore,mid){
+    const el=document.getElementById('watch-mini');
+    if(!el)return;
+    el.innerHTML=`
+      <div class="mini-team"><span class="nm">${usName||'Us'}</span> <span class="mini-pts">${usScore}</span></div>
+      <div class="mini-mid">${mid||''}</div>
+      <div class="mini-team"><span class="mini-pts">${oppScore}</span> <span class="nm">${oppName||'Opp'}</span></div>`;
+    el.classList.remove('hidden');
+  },
+  _hideMini(){ const el=document.getElementById('watch-mini'); if(el)el.classList.add('hidden'); },
+  // Update just the two score numbers in the sticky mini-bar (order: us, opp).
+  _miniSetScores(us,opp){
+    const el=document.getElementById('watch-mini'); if(!el)return;
+    const pts=el.querySelectorAll('.mini-pts');
+    if(pts.length===2){ pts[0].textContent=us; pts[1].textContent=opp; }
   },
   // Final result banner: win = fireworks, loss = sad faces, tie = neutral.
   _resultBanner(teamScore,oppScore){
