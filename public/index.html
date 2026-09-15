@@ -110,7 +110,7 @@ h3{font-size:1rem;margin-bottom:6px}
 .wfieldwrap .ez-g{fill:#fff;font-size:2.8px;font-weight:800}
 .wfieldwrap .yl-num{fill:rgba(255,255,255,0.85);font-size:2.6px;font-weight:700}
 /* Sticky mini-scoreboard for the watch view (always visible while scrolling) */
-#watch-mini{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;margin:0 0 8px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+#watch-mini{position:sticky;top:44px;z-index:45;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;margin:6px 0 8px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
 #watch-mini .mini-team{display:flex;align-items:center;gap:8px;font-size:0.95rem;font-weight:600;min-width:0}
 #watch-mini .mini-team .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32vw}
 #watch-mini .mini-pts{font-size:1.6rem;font-weight:800}
@@ -557,7 +557,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v52</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v53</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -1126,6 +1126,8 @@ const Watch={
     const sc=this._scoreThrough(r,r.idx, !animate);
     const scoreGame={team_score:sc.team, opp_score:sc.opp, opponent:g.opponent};
     const banner=atEnd?this._resultBanner(g.team_score,g.opp_score):'';
+    // Ensure the sticky mini-scoreboard is populated + visible for this replay.
+    this._miniScore(this.teamName||'Us', sc.team, g.opponent, sc.opp, 'REPLAY');
 
     body.innerHTML=banner+this._scoreboard(null,scoreGame,true)+
       `<div class="card" style="text-align:center;padding:8px">
