@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v59</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v60</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -1035,7 +1035,7 @@ const Watch={
       </div>`;
     ty.classList.remove('hidden');
   },
-  _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); clearTimeout(this._revealTimer); this._pollTimer=null; this._replayTimer=null; this._revealTimer=null; },
+  _stopAll(){ clearInterval(this._pollTimer); clearTimeout(this._replayTimer); clearTimeout(this._revealTimer); this._pollTimer=null; this._replayTimer=null; this._revealTimer=null; this._lsCount=null; this._lsAt=null; },
   showErr(m){ const el=document.getElementById('watch-error'); el.textContent=m; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),4000); },
 
   async start(){
@@ -1071,6 +1071,7 @@ const Watch={
       const body=document.getElementById('watch-body');
       if(!data.live){
         this._hideMini();
+        this._lsCount=null; this._lsAt=null;   // reset live-sync stall tracker
         body.innerHTML='<div class="card" style="text-align:center">No live game right now.<br><span style="color:var(--muted);font-size:0.85rem">This page updates automatically when a game starts. Or tap ▶️ Replay a Game.</span></div>';
         return;
       }
@@ -1094,6 +1095,7 @@ const Watch={
       }
       body.innerHTML=this._scoreboard(data.teamName,g)+
         this._statusLine(gs)+
+        this._liveSync(plays.length)+
         fieldHtml+
         `<h3 style="margin:10px 0 4px">Latest Play</h3>`+
         latestNote+
@@ -1475,6 +1477,26 @@ const Watch={
     const ydLbl=this._ydLabel(gs.ballPos,fl);
     return `<div id="wstatus" class="card" style="display:flex;justify-content:space-between;gap:6px;font-size:0.9rem;padding:8px 12px">
       <span><strong>${qlbl}</strong></span><span>${dn}${toGo!==''?' & '+toGo:''}</span>${ydLbl?`<span>${ydLbl}</span>`:''}<span>${poss}</span></div>`;
+  },
+  // Live sync health for spectators (e.g. the coach watching from their OWN
+  // tablet while a helper operates). Shows how many plays the SERVER has for the
+  // live game and whether that count is still climbing. If it stalls while the
+  // game clearly continues, the operator's device likely isn't uploading — the
+  // exact failure that lost ~45 plays. Spectators have no local log, so we can
+  // only report the server-confirmed count (that's the number that matters).
+  _liveSync(serverCount){
+    const now=Date.now();
+    // Track when the count last increased.
+    if(this._lsCount==null||serverCount>this._lsCount){ this._lsCount=serverCount; this._lsAt=now; }
+    const stalledMs=now-(this._lsAt||now);
+    // "Stalled" only means something after a game has some plays; give 90s grace
+    // (timeouts, huddles, halftime between plays are normal).
+    const stalled=serverCount>0 && stalledMs>90000;
+    if(stalled){
+      const mins=Math.round(stalledMs/60000);
+      return `<div class="recon warn" style="cursor:default">⚠️ ${serverCount} plays saved · no new play in ~${mins} min — if the game is still going, check the tracking device is online</div>`;
+    }
+    return `<div class="recon ok" style="cursor:default">● Live · ${serverCount} play${serverCount===1?'':'s'} saved to server</div>`;
   },
   // Ball position as a yard-line label (in the possessing team's frame):
   // own half -> "Own X", past midfield -> "Opp X", exactly half -> "Midfield".
