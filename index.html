@@ -138,6 +138,10 @@ h3{font-size:1rem;margin-bottom:6px}
 /* fireworks bursts */
 .fw{position:absolute;width:6px;height:6px;border-radius:50%;z-index:1;opacity:0;animation:fwburst 1.6s ease-out infinite}
 @keyframes fwburst{0%{transform:scale(0.2);opacity:1}70%{opacity:0.9}100%{transform:scale(2.6);opacity:0}}
+/* Reconciliation status (operator game screen): Recorded X / Saved Y */
+.recon{margin-top:8px;text-align:center;font-size:0.82rem;font-weight:600;padding:7px 8px;border-radius:8px;cursor:pointer}
+.recon.ok{background:#e8f5e9;color:#2e7d32}
+.recon.warn{background:#fff3cd;color:#7a5c00;border:1px solid #ffe08a}
 /* ---- Responsive sizing: phones use the compact defaults above; tablets and
    desktops get a wider, slightly larger layout so the app doesn't sit as a
    narrow column on big screens. Phone experience is unchanged. ---- */
@@ -500,6 +504,7 @@ h3{font-size:1rem;margin-bottom:6px}
     <div class="action-row hidden" id="onside-row" style="margin-top:6px">
       <button class="btn btn-sm" id="onside-btn" style="background:#fff3e0;color:#e65100" onclick="GameActions.onside()">🎯 Onside Kick</button>
     </div>
+    <div id="recon-status" class="recon" onclick="Recon.reconcile()" title="Tap to sync now">Recorded 0 · Saved ?</div>
   </div>
   <div class="card hidden" id="log-card"><h3>Play-by-Play</h3><div class="play-log" id="play-log-el"></div></div>
 </div>
@@ -557,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v58</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v59</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -746,6 +751,89 @@ const Banner={
 };
 // Reflect the current state on load.
 Banner.update();
+
+// ============================================================
+// RECON — local-first reconciliation. The device's in-memory gamePlays is the
+// source of truth; we periodically compare it to what the server actually has
+// (by clientUid) and re-send anything missing. Surfaces a "Recorded X / Saved Y"
+// status so the operator can SEE if plays aren't reaching the server.
+// ============================================================
+const Recon={
+  _timer:null,
+  savedCount:null,     // last known count on the server (null = unknown)
+  running:false,
+
+  // How many real plays we've recorded locally for the current game.
+  recordedCount(){ return (typeof gamePlays!=='undefined' && gamePlays) ? gamePlays.length : 0; },
+
+  start(){
+    this.stop();
+    // Reconcile every 15s during a live game.
+    this._timer=setInterval(()=>{ this.reconcile(); }, 15000);
+    // Do one shortly after start so status appears quickly.
+    setTimeout(()=>this.reconcile(), 1500);
+  },
+  stop(){ if(this._timer){ clearInterval(this._timer); this._timer=null; } },
+
+  // Compare local plays to the server's clientUids; re-send any the server lacks.
+  async reconcile(){
+    if(this.running) return;
+    if(!currentGame || !currentGame.id || currentGame.completed) return;
+    if(!API.token) return;
+    this.running=true;
+    try{
+      const data=await API.get(`/games/${currentGame.id}/play-uids`);
+      const serverUids=new Set(data.uids||[]);
+      this.savedCount=(typeof data.count==='number')?data.count:serverUids.size;
+      // Find local plays whose clientUid the server does NOT have.
+      const missing=(gamePlays||[]).filter(p=>p.clientUid && !serverUids.has(p.clientUid));
+      let sent=0;
+      for(const p of missing){
+        try{
+          if(!p._gameId)p._gameId=currentGame.id;
+          await API.post(`/games/${currentGame.id}/plays`,p);  // idempotent via clientUid
+          serverUids.add(p.clientUid); sent++;
+        }catch(e){ /* still offline — leave it; queue/next cycle will retry */ 
+          if(!Cache.getPending().some(en=>en.play&&en.play.clientUid===p.clientUid)){ Cache.queuePlay(p); }
+        }
+      }
+      if(sent>0){
+        // Refresh the true server count after re-sending.
+        try{ const d2=await API.get(`/games/${currentGame.id}/play-uids`); this.savedCount=d2.count; }catch(e){}
+        // Also push the current score/state so the server matches.
+        try{ await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState}); }catch(e){}
+      }
+    }catch(e){ /* offline / server unreachable — status will show unknown */ 
+      this.savedCount=null;
+    }finally{
+      this.running=false;
+      this.renderStatus();
+      Banner.update();
+    }
+  },
+
+  // How many local plays are NOT yet confirmed on the server.
+  unsyncedCount(){
+    if(this.savedCount==null) return this.recordedCount(); // unknown -> treat all as unconfirmed
+    return Math.max(0, this.recordedCount()-this.savedCount);
+  },
+
+  // Update the on-screen "Recorded X / Saved Y" indicator (operator game screen).
+  renderStatus(){
+    const el=document.getElementById('recon-status');
+    if(!el)return;
+    const rec=this.recordedCount();
+    const saved=(this.savedCount==null)?'?':this.savedCount;
+    const behind=(this.savedCount!=null)&&(this.savedCount<rec);
+    if(this.savedCount==null){
+      el.className='recon warn'; el.textContent=`⚠️ Recorded ${rec} · Saved ? (offline — tap to sync)`;
+    }else if(behind){
+      el.className='recon warn'; el.textContent=`⚠️ Recorded ${rec} · Saved ${saved} — ${rec-saved} not uploaded (tap to sync)`;
+    }else{
+      el.className='recon ok'; el.textContent=`✓ Recorded ${rec} · Saved ${saved} — all synced`;
+    }
+  }
+};
 
 // ============================================================
 // ADMIN PANEL (separate auth via x-admin-token; reached at /admin)
@@ -1721,7 +1809,7 @@ const UI={
     }
   },
   // Browser/hardware BACK does exactly what the on-screen "← Back" link does for each screen.
-  goHome(){ Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); },
+  goHome(){ if(typeof Recon!=='undefined')Recon.stop(); Auth.onLoggedIn(localStorage.getItem('ff_team_name')||''); },
   // Render a screen WITHOUT pushing a new history entry (used when responding to
   // the browser's back button — the browser already moved the pointer for us).
   restore(id){
@@ -2937,6 +3025,7 @@ const GameUI={
     document.getElementById('game-ctrls').classList.remove('hidden');
     document.getElementById('play-flow').classList.remove('hidden');
     this.refresh();Flow.restart();
+    if(typeof Recon!=='undefined')Recon.start();   // begin local↔server reconciliation
   },
   refresh(){
     document.getElementById('g-us-s').textContent=currentGame.teamScore;
@@ -2950,6 +3039,7 @@ const GameUI={
     document.getElementById('g-poss').textContent=gameState.possession==='offense'?'🏈 Our Ball – Offense':'🛡️ Their Ball – Defense';
     document.getElementById('g-sync').textContent=Cache.getStatus();
     if(typeof Banner!=='undefined')Banner.update();
+    if(typeof Recon!=='undefined')Recon.renderStatus();
     // Switch button: only on the first play of Q1, the first play of Q3 (2nd half), or in overtime.
     const canSwitch=(!!gameState.halfStart)||(!!gameState.overtime);
     document.getElementById('switch-btn').classList.toggle('hidden',!canSwitch);
@@ -3957,7 +4047,7 @@ const XP={
     const mLabel=this.pts===2?'2pt set play':(this.meth==='kick'?'1pt kick':'1pt set play');
     const playerNum=this._player||'';
     const desc=`${this.team==='team'?'Our':'Opp'} XP: ${mLabel}${playerNum?' #'+playerNum:''} - ${r==='good'?'GOOD':'No Good'}`;
-    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{kicker:playerNum},yards:0,downBefore:0,ballPosBefore:0,description:desc,quarter:gameState.quarter||1};
+    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{kicker:playerNum},yards:0,downBefore:0,ballPosBefore:0,description:desc,quarter:gameState.quarter||1,clientUid:Cache.uid(),_gameId:currentGame.id};
     gamePlays.push(play);
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
     // After the XP: other team gets the ball. In OT, they start 1st & Goal at the 10.
@@ -4119,7 +4209,28 @@ const GameActions={
   },
   async endGame(){
     if(!confirm('End game?'))return;
+    // SAFETY: don't let a game be finalized while plays haven't reached the
+    // server — reconcile first, and if any are still unsynced, warn loudly.
+    try{ await Recon.reconcile(); }catch(e){}
+    const unsynced=Recon.unsyncedCount();
+    if(unsynced>0){
+      const proceed=confirm(
+        `⚠️ ${unsynced} play(s) have NOT uploaded to the server yet.\n\n`+
+        `Connect to WiFi or a hotspot and wait for the "all synced" message before ending.\n\n`+
+        `Tap Cancel to stay and let them sync (recommended).\n`+
+        `Tap OK ONLY if you understand these plays may be lost.`
+      );
+      if(!proceed){
+        // Try one more sync pass and keep the operator on the game screen.
+        try{ await Cache.syncPending(); await Recon.reconcile(); }catch(e){}
+        alert(Recon.unsyncedCount()>0
+          ? `Still ${Recon.unsyncedCount()} not uploaded. Keep this device online; it will keep retrying.`
+          : '✅ All plays are now synced. You can safely end the game.');
+        return;
+      }
+    }
     currentGame.completed=true;
+    if(typeof Recon!=='undefined')Recon.stop();
     try{await API.put(`/games/${currentGame.id}`,{completed:true,teamScore:currentGame.teamScore,oppScore:currentGame.oppScore})}catch(e){}
     Games.summary(currentGame.id)
   },

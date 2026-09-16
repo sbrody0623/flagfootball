@@ -751,6 +751,25 @@ app.get('/api/games/:gid/plays', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Reconciliation: return just the clientUids (and count) the server has for a
+// game. The client compares this to its local log to detect + re-send any plays
+// the server is missing, and to spot duplicates. Cheap payload for polling.
+app.get('/api/games/:gid/play-uids', authenticate, async (req, res) => {
+  try {
+    const check = await supaGet('games', `id=eq.${req.params.gid}&select=id,season_id`);
+    if (!check || check.length === 0) return res.status(404).json({ error: 'Game not found' });
+    const seasonCheck = await supaGet('seasons', `id=eq.${check[0].season_id}&team_id=eq.${req.teamId}&select=id`);
+    if (!seasonCheck || seasonCheck.length === 0) return res.status(404).json({ error: 'Game not found' });
+    const plays = await supaGet('plays', `game_id=eq.${req.params.gid}&select=players`);
+    const uids = [];
+    for (const p of (plays || [])) {
+      const u = p.players && p.players._clientUid;
+      if (u) uids.push(u);
+    }
+    res.json({ count: (plays || []).length, uids });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/games/:gid/plays', authenticate, async (req, res) => {
   try {
     const { playNumber, possession, playType, result, players, yards, downBefore, ballPosBefore, description, quarter, clientUid } = req.body;
@@ -771,13 +790,25 @@ app.post('/api/games/:gid/plays', authenticate, async (req, res) => {
     if (clientUid) playersBlob._clientUid = clientUid;
 
     // Idempotency check: has a play with this clientUid already been saved?
+    // Two-tier so a re-send can NEVER create a duplicate:
+    //  (a) fast path via the JSON operator filter;
+    //  (b) if that errors/returns nothing, fall back to fetching all this game's
+    //      plays and checking the clientUid in JS (robust even if the DB's JSON
+    //      operator behaves unexpectedly).
     if (clientUid) {
+      let dupId = null;
       try {
         const existing = await supaGet('plays', `game_id=eq.${req.params.gid}&players->>_clientUid=eq.${encodeURIComponent(clientUid)}&select=id`);
-        if (existing && existing.length > 0) {
-          return res.json({ id: existing[0].id, duplicate: true });
-        }
-      } catch (e) { /* if the filter isn't supported, fall through and just insert */ }
+        if (existing && existing.length > 0) dupId = existing[0].id;
+      } catch (e) { /* fall through to the JS check below */ }
+      if (dupId === null) {
+        try {
+          const all = await supaGet('plays', `game_id=eq.${req.params.gid}&select=id,players`);
+          const hit = (all || []).find(p => p.players && p.players._clientUid === clientUid);
+          if (hit) dupId = hit.id;
+        } catch (e) { /* if even this fails, we insert below */ }
+      }
+      if (dupId !== null) return res.json({ id: dupId, duplicate: true });
     }
 
     const play = await supaInsert('plays', {
