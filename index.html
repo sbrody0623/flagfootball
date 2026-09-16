@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v62</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v63</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -2762,8 +2762,10 @@ const Stats={
   //   - "Penalties" = penalty rows, attributed to the fouling team via the
   //      description tag (O-* = offense/ball-carrying team, D-* = defense), with
   //      accepted penalty yardage.
-  //   - "Turnovers" = interceptions thrown + turnovers on downs (lost by the
-  //      team that had the ball). Also counts opponent INTs against us, etc.
+  //   - "Turnovers" = INTERCEPTIONS only. In flag football that's the only kind
+  //      of turnover (no fumbles); a turnover on downs is just a change of
+  //      possession, NOT a stat-line turnover. Charged to the team that threw
+  //      the pick (offense picked = ours; our defense picked = opponent's).
   computeTeamStats(plays){
     const us={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0};
     const opp={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0};
@@ -2794,10 +2796,10 @@ const Stats={
       if(ours)us.plays++; else opp.plays++;
       // Net yards for the team that ran the play (their own offense).
       if(ours)us.yards+=yds; else opp.yards+=yds;
-      // Turnovers: an interception is lost by the team that threw it; a turnover
-      // on downs is lost by the team that had the ball.
+      // Turnovers = interceptions only. Charged to the team that threw the pick
+      // (offense = our ball -> our turnover; defense = opp's ball -> their turnover).
+      // Turnover-on-downs is NOT counted (it's just a possession change).
       if(result==='interception'){ if(ours)us.turnovers++; else opp.turnovers++; }
-      if(desc.includes('Turnover on downs')){ if(ours)us.turnovers++; else opp.turnovers++; }
     }
     return {us,opp};
   },
@@ -2808,7 +2810,7 @@ const Stats={
       ['Total Plays', ts.us.plays, ts.opp.plays],
       ['Total Yards', ts.us.yards, ts.opp.yards],
       ['Penalties (Yds)', `${ts.us.penalties} (${ts.us.penaltyYds})`, `${ts.opp.penalties} (${ts.opp.penaltyYds})`],
-      ['Turnovers', ts.us.turnovers, ts.opp.turnovers],
+      ['Interceptions (Turnovers)', ts.us.turnovers, ts.opp.turnovers],
     ];
     const oppName=(g&&g.opponent)||'Opp';
     const body=rows.map(r=>`<tr>
@@ -2832,7 +2834,7 @@ const Stats={
       ['Total Plays', ts.us.plays, ts.opp.plays],
       ['Total Yards', ts.us.yards, ts.opp.yards],
       ['Penalties (Yds)', `${ts.us.penalties} (${ts.us.penaltyYds})`, `${ts.opp.penalties} (${ts.opp.penaltyYds})`],
-      ['Turnovers', ts.us.turnovers, ts.opp.turnovers],
+      ['Interceptions (Turnovers)', ts.us.turnovers, ts.opp.turnovers],
     ];
     const body=rows.map(r=>`<tr><td class="pl">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
     return `<h3>Team Stats</h3><table><thead><tr><th>Stat</th><th>${teamName||'Us'}</th><th>${oppName}</th></tr></thead>
