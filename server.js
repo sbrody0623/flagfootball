@@ -765,7 +765,9 @@ app.post('/api/games/:gid/plays', authenticate, async (req, res) => {
     // idempotent: if a play with the same uid already exists for this game we
     // do NOT insert a duplicate (guards against lost-response re-sends).
     const playersBlob = Object.assign({}, players || {});
-    if (quarter !== undefined && quarter !== null) playersBlob._quarter = quarter;
+    // Always store quarter as a clean integer (default 1) so it reliably
+    // round-trips and per-quarter stat filtering never loses a play.
+    { const qn = parseInt(quarter, 10); playersBlob._quarter = (isNaN(qn) ? 1 : qn); }
     if (clientUid) playersBlob._clientUid = clientUid;
 
     // Idempotency check: has a play with this clientUid already been saved?
