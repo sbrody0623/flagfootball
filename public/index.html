@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v60</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v61</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -2392,6 +2392,7 @@ const Games={
       window._summaryTeamName=teamName;
       document.getElementById('summary-el').innerHTML=`
         <div class="scoreboard"><div class="team"><div class="name">${teamName}</div><div class="pts">${g.team_score}</div></div><div class="vs">VS</div><div class="team"><div class="name">${g.opponent}</div><div class="pts">${g.opp_score}</div></div></div>
+        ${Stats.lineScoreCardHtml(plays,g,teamName)}
         <div class="card"><p><strong>${g.home_away==='home'?'Home':'Away'}</strong> | ${g.field_length}yd | ${plays.length} plays</p>
         ${Stats.maxprepsBadge()}
         <button class="btn btn-primary" onclick="Stats.printBoxScore()">📄 Download / Print Box Score</button>
@@ -2721,6 +2722,65 @@ const Stats={
     </div>`;
   },
 
+  // Compute the scoring-by-quarter "line score" from the plays.
+  // Returns { cols:[{key,label}], us:{Q1:n,...,total:n}, opp:{...} } where cols
+  // is the ordered set of period columns actually needed (Q1-Q4, plus OT columns
+  // if the game went to overtime, plus an "?" column only if some scoring plays
+  // never got a quarter stamped). Reuses Watch._playPoints so the math matches
+  // exactly how the app scores a game everywhere else.
+  computeLineScore(plays,g){
+    const us={total:0}, opp={total:0};
+    let maxQ=4, hasUnknown=false;
+    for(const p of (plays||[])){
+      const pts=Watch._playPoints(p);
+      if(pts.team===0 && pts.opp===0) continue; // only scoring plays matter
+      let qn=(p.quarter==null||p.quarter==='')?null:parseInt(p.quarter,10);
+      let key;
+      if(qn==null||isNaN(qn)){ key='?'; hasUnknown=true; }
+      else { key='Q'+qn; if(qn>maxQ)maxQ=qn; }
+      us[key]=(us[key]||0)+pts.team;
+      opp[key]=(opp[key]||0)+pts.opp;
+    }
+    // Total column: trust the authoritative game totals (matches the scoreboard),
+    // falling back to summed points if the game record lacks them.
+    const sum=o=>Object.keys(o).filter(k=>k!=='total').reduce((a,k)=>a+o[k],0);
+    us.total=(g&&g.team_score!=null)?g.team_score:sum(us);
+    opp.total=(g&&g.opp_score!=null)?g.opp_score:sum(opp);
+    // Build ordered columns: Q1..maxQ (regulation shown as Q, OT periods as OT).
+    const cols=[];
+    for(let i=1;i<=maxQ;i++){ cols.push({key:'Q'+i, label:i<=4?('Q'+i):('OT'+(i-4))}); }
+    if(hasUnknown)cols.push({key:'?', label:'—'});
+    return {cols, us, opp};
+  },
+  // On-screen line-score card for the summary view.
+  lineScoreCardHtml(plays,g,teamName){
+    const ls=this.computeLineScore(plays,g);
+    if(!ls.cols.length) return '';
+    const head=ls.cols.map(c=>`<th style="padding:4px 8px;text-align:center">${c.label}</th>`).join('');
+    const row=(name,o,bold)=>`<tr>
+      <td style="padding:4px 8px;text-align:left;font-weight:600">${name}</td>
+      ${ls.cols.map(c=>`<td style="padding:4px 8px;text-align:center">${o[c.key]||0}</td>`).join('')}
+      <td style="padding:4px 8px;text-align:center;font-weight:800;border-left:2px solid var(--border)">${o.total||0}</td>
+    </tr>`;
+    return `<div class="card"><h3>Scoring by Quarter</h3>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+        <thead><tr style="border-bottom:2px solid var(--border)">
+          <th style="padding:4px 8px;text-align:left">Team</th>${head}
+          <th style="padding:4px 8px;text-align:center;border-left:2px solid var(--border)">T</th>
+        </tr></thead>
+        <tbody>${row(teamName||'Us',ls.us)}${row((g&&g.opponent)||'Opp',ls.opp)}</tbody>
+      </table></div></div>`;
+  },
+  // Printable line-score table (uses the print doc's shared table CSS).
+  lineScorePrintHtml(plays,g,teamName){
+    const ls=this.computeLineScore(plays,g);
+    if(!ls.cols.length) return '';
+    const head=ls.cols.map(c=>`<th>${c.label}</th>`).join('');
+    const row=(name,o)=>`<tr><td class="pl">${name}</td>${ls.cols.map(c=>`<td>${o[c.key]||0}</td>`).join('')}<td style="font-weight:800;border-left:2px solid #333">${o.total||0}</td></tr>`;
+    return `<h3>Scoring by Quarter</h3><table><thead><tr><th>Team</th>${head}<th>Total</th></tr></thead>
+      <tbody>${row(teamName||'Us',ls.us)}${row((g&&g.opponent)||'Opp',ls.opp)}</tbody></table>`;
+  },
+
   // Build a printable, MaxPreps-style box score and open it in a new window
   printBoxScore(){
     const plays=window._summaryPlays||[];
@@ -2852,6 +2912,7 @@ const Stats={
       <h1>${teamName} ${g.home_away==='home'?'vs':'@'} ${g.opponent}</h1>
       <div class="sub">${dateStr} · ${g.field_length}yd field · ${g.completed?'Final':'In progress'}</div>
       <div class="score">${teamName} ${g.team_score} — ${g.opp_score} ${g.opponent}</div>
+      ${this.lineScorePrintHtml(plays,g,teamName)}
       <h2 style="font-size:15px;margin-top:16px">${teamName} — Box Score</h2>
       ${body}
       </body></html>`);
