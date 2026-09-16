@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v63</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v64</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -2896,8 +2896,8 @@ const Stats={
         if(type==='pass'&&result==='complete'&&p.receiver){if(!receiving[p.receiver])receiving[p.receiver]={rec:0,yds:0,td:0,long:0};receiving[p.receiver].rec++;receiving[p.receiver].yds+=yds;if(yds>receiving[p.receiver].long)receiving[p.receiver].long=yds;if(isTD){receiving[p.receiver].td++;ensScore(p.receiver);scoring[p.receiver].td++;scoring[p.receiver].pts+=6;}}
         if(type==='punt'&&p.punter){if(!punting[p.punter])punting[p.punter]={punts:0,yds:0,long:0};punting[p.punter].punts++;punting[p.punter].yds+=yds;if(yds>punting[p.punter].long)punting[p.punter].long=yds;}
         if(type==='punt'&&result==='return'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
-        if(type==='fg'&&p.kicker){if(!kicking[p.kicker])kicking[p.kicker]={fgAtt:0,fgMade:0,xpAtt:0,xpMade:0};kicking[p.kicker].fgAtt++;if(result==='good'){kicking[p.kicker].fgMade++;ensScore(p.kicker);scoring[p.kicker].fg++;scoring[p.kicker].fgAtt++;scoring[p.kicker].pts+=3;}else{ensScore(p.kicker);scoring[p.kicker].fgAtt++;}}
-        if(type==='xp'){const desc=play.description||'';if(desc.includes('Our XP')){const k=(p.kicker&&p.kicker!=='')?p.kicker:'Team';if(!kicking[k])kicking[k]={fgAtt:0,fgMade:0,xpAtt:0,xpMade:0};kicking[k].xpAtt++;ensScore(k);scoring[k].xpAtt++;if(result==='good'){kicking[k].xpMade++;scoring[k].xp++;scoring[k].pts+=(desc.includes('2pt')?2:1);}}}
+        if(type==='fg'&&p.kicker){if(!kicking[p.kicker])kicking[p.kicker]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};kicking[p.kicker].fgAtt++;const dist=yds+10;if(result==='good'){kicking[p.kicker].fgMade++;kicking[p.kicker].fgDetails.push(`${dist}yd ✓`);ensScore(p.kicker);scoring[p.kicker].fg++;scoring[p.kicker].fgAtt++;scoring[p.kicker].pts+=3;}else{kicking[p.kicker].fgDetails.push(`${dist}yd ✗`);ensScore(p.kicker);scoring[p.kicker].fgAtt++;}}
+        if(type==='xp'){const desc=play.description||'';if(desc.includes('Our XP')){const k=(p.kicker&&p.kicker!=='')?p.kicker:'Team';if(!kicking[k])kicking[k]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};kicking[k].xpAtt++;ensScore(k);scoring[k].xpAtt++;if(result==='good'){kicking[k].xpMade++;scoring[k].xp++;scoring[k].pts+=(desc.includes('2pt')?2:1);}}}
       }
       if(side==='defense'){
         if(type==='pass'){
@@ -2957,9 +2957,9 @@ const Stats={
     const prRows=Object.keys(puntRet).map(n=>{const s=puntRet[n];const avg=s.ret?(s.yds/s.ret).toFixed(1):'0.0';return{label:L(n),vals:[s.ret,s.yds,avg,s.long]}});
     const prTot=prRows.length?[sum(puntRet,'ret'),sum(puntRet,'yds'),(sum(puntRet,'ret')?(sum(puntRet,'yds')/sum(puntRet,'ret')).toFixed(1):'0.0'),maxOf(puntRet,'long')]:null;
 
-    // Kicking
-    const kickRows=Object.keys(kicking).map(n=>{const s=kicking[n];return{label:L(n),vals:[`${s.fgMade}/${s.fgAtt}`,`${s.xpMade}/${s.xpAtt}`]}});
-    const kickTot=kickRows.length?[`${sum(kicking,'fgMade')}/${sum(kicking,'fgAtt')}`,`${sum(kicking,'xpMade')}/${sum(kicking,'xpAtt')}`]:null;
+    // Kicking (FG made/att, per-attempt FG distances w/ result, XP made/att)
+    const kickRows=Object.keys(kicking).map(n=>{const s=kicking[n];const det=(s.fgDetails&&s.fgDetails.length)?s.fgDetails.join(', '):'—';return{label:L(n),vals:[`${s.fgMade}/${s.fgAtt}`,det,`${s.xpMade}/${s.xpAtt}`]}});
+    const kickTot=kickRows.length?[`${sum(kicking,'fgMade')}/${sum(kicking,'fgAtt')}`,'',`${sum(kicking,'xpMade')}/${sum(kicking,'xpAtt')}`]:null;
 
     // Scoring
     const scoreRows=Object.keys(scoring).map(n=>{const s=scoring[n];return{label:L(n),vals:[s.pts,s.td,`${s.xp}/${s.xpAtt}`,`${s.fg}/${s.fgAtt}`]}});
@@ -2974,7 +2974,7 @@ const Stats={
     body+=tbl('Interceptions',['Int','Int Yds'],intRows,intTot);
     body+=tbl('Punting',['Punts','Yds','Avg','Long'],puntRows,puntTot);
     body+=tbl('Punt Returns',['Ret','Yds','Avg','Long'],prRows,prTot);
-    body+=tbl('Kicking',['FG','XP'],kickRows,kickTot);
+    body+=tbl('Kicking',['FG','FG Detail','XP'],kickRows,kickTot);
     body+=tbl('Scoring',['Pts','TD','XP','FG'],scoreRows,scoreTot);
     if(!body)body='<p>No individual stats recorded.</p>';
 
