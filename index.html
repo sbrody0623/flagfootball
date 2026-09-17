@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v65</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v66</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -2817,8 +2817,23 @@ const Stats={
       if(type==='xp')continue;
       // A real snap.
       if(ours)us.plays++; else opp.plays++;
-      // Net yards for the team that ran the play (their own offense).
-      if(ours)us.yards+=yds; else opp.yards+=yds;
+      // Net OFFENSIVE yards = passing (completions) + rushing (runs) + sack yards
+      // (negative). This mirrors exactly how the Passing/Rushing box-score tables
+      // total up, so "Total Yards" == passing + rushing. Deliberately EXCLUDES:
+      //   - punts & punt returns (yards = kick/return distance, not offense)
+      //   - interception plays (yards = INT return yards)
+      //   - field goals / blocks
+      // Incomplete/dropped passes contribute 0.
+      let offYds=0;
+      if(type==='pass'){
+        if(result==='complete')offYds=yds;              // passing yards
+        else if(result==='sack')offYds=-Math.abs(yds);  // sack = negative rushing yards
+        // incomplete / interception -> 0 offensive yards
+      }else if(type==='run'){
+        // Runs store gains as +yds and losses as -yds already (see Flow.confirm).
+        offYds=yds;
+      }
+      if(offYds){ if(ours)us.yards+=offYds; else opp.yards+=offYds; }
       // Turnovers = interceptions only. Charged to the team that threw the pick
       // (offense = our ball -> our turnover; defense = opp's ball -> their turnover).
       // Turnover-on-downs is NOT counted (it's just a possession change).
