@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v64</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v65</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -2766,9 +2766,22 @@ const Stats={
   //      of turnover (no fumbles); a turnover on downs is just a change of
   //      possession, NOT a stat-line turnover. Charged to the team that threw
   //      the pick (offense picked = ours; our defense picked = opponent's).
+  //   - "First Downs" = earned first downs WITHIN a drive: the ball crossed the
+  //      line-to-gain on a play, or a defensive penalty gave an automatic first
+  //      down. The automatic 1st-down that just STARTS a new drive (after a
+  //      punt/INT/FG/score/turnover-on-downs/kickoff) is NOT counted. Computed
+  //      from each play's pre-snap snapshot (down + firstDownLine + ballPos).
+  // Read a play's PRE-snap gameState (down, ballPos, firstDownLine, possession)
+  // from the stashed _stateBefore snapshot, falling back to top-level columns.
+  _preState(p){
+    try{ if(p.players&&p.players._stateBefore){ const s=JSON.parse(p.players._stateBefore); if(s&&s.gameState)return s.gameState; } }catch(e){}
+    return {down:(p.down_before!=null?p.down_before:(p.downBefore!=null?p.downBefore:1)),
+      ballPos:(p.ball_pos_before!=null?p.ball_pos_before:(p.ballPosBefore!=null?p.ballPosBefore:null)),
+      firstDownLine:null, possession:p.possession||'offense'};
+  },
   computeTeamStats(plays){
-    const us={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0};
-    const opp={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0};
+    const us={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0,firstDowns:0};
+    const opp={plays:0,yards:0,penalties:0,penaltyYds:0,turnovers:0,firstDowns:0};
     for(const play of (plays||[])){
       const type=(play.play_type||play.playType||play.type||'').toLowerCase();
       const result=(play.result||'').toLowerCase();
@@ -2776,7 +2789,7 @@ const Stats={
       const desc=(play.description||'');
       const ours=(play.possession||'offense')==='offense';
       // Period-end markers aren't plays.
-      if(type==='quarter')continue;
+      if(type==='quarter'||type==='onside')continue;
       // Penalties: administrative, not a snap. Attribute to the fouling side.
       if(type==='penalty'||result==='penalty'){
         // Description leads with the flag + code, e.g. "🚩 O-Holding" / "🚩 D-Offside".
@@ -2788,6 +2801,16 @@ const Stats={
         const penYds=Math.abs(play.yards||0);
         if(foulUs){ us.penalties++; us.penaltyYds+=penYds; }
         else { opp.penalties++; opp.penaltyYds+=penYds; }
+        // A penalty can earn a first down (defensive auto 1st down, or penalty
+        // yardage that crossed the sticks) — but not if it ended the drive.
+        if(!desc.includes('Turnover on downs')){
+          const pre=this._preState(play);
+          const crossedByPenalty = (pre.firstDownLine!=null && pre.ballPos!=null &&
+            ((pre.ballPos+ (play.yards||0)) >= pre.firstDownLine));
+          if(desc.includes('Auto 1st Down') || crossedByPenalty){
+            if(ballTeamUs)us.firstDowns++; else opp.firstDowns++;
+          }
+        }
         continue;
       }
       // XP tries aren't scrimmage plays (kept out of the play count, like MaxPreps).
@@ -2800,6 +2823,26 @@ const Stats={
       // (offense = our ball -> our turnover; defense = opp's ball -> their turnover).
       // Turnover-on-downs is NOT counted (it's just a possession change).
       if(result==='interception'){ if(ours)us.turnovers++; else opp.turnovers++; }
+      // EARNED first down: only plays that KEEP possession and move the chains.
+      // Anything that changes possession (punt, INT, FG, score, turnover-on-
+      // downs) cannot earn a first down for the offense that ran it, so exclude
+      // those play types/results and any drive-ending description.
+      const changesPoss = (type==='punt'||type==='puntreturn'||type==='fg'||type==='fgblock'
+        || result==='interception' || desc.includes('Turnover on downs')
+        || desc.includes('TOUCHDOWN') || desc.includes('SAFETY'));
+      if(!changesPoss){
+        const pre=this._preState(play);
+        // Mirror the engine's own rule: first down when the ball reaches/passes
+        // the line-to-gain. Requires a valid pre-snap snapshot (firstDownLine).
+        if(pre.firstDownLine!=null && pre.ballPos!=null){
+          const after=pre.ballPos+(yds||0);
+          const fl=pre.fieldLength||null;
+          const reachedGoal = fl!=null && after>=fl;   // a TD is handled above; guard anyway
+          if(!reachedGoal && after>=pre.firstDownLine){
+            if(ours)us.firstDowns++; else opp.firstDowns++;
+          }
+        }
+      }
     }
     return {us,opp};
   },
@@ -2809,6 +2852,7 @@ const Stats={
     const rows=[
       ['Total Plays', ts.us.plays, ts.opp.plays],
       ['Total Yards', ts.us.yards, ts.opp.yards],
+      ['First Downs', ts.us.firstDowns, ts.opp.firstDowns],
       ['Penalties (Yds)', `${ts.us.penalties} (${ts.us.penaltyYds})`, `${ts.opp.penalties} (${ts.opp.penaltyYds})`],
       ['Interceptions (Turnovers)', ts.us.turnovers, ts.opp.turnovers],
     ];
@@ -2833,6 +2877,7 @@ const Stats={
     const rows=[
       ['Total Plays', ts.us.plays, ts.opp.plays],
       ['Total Yards', ts.us.yards, ts.opp.yards],
+      ['First Downs', ts.us.firstDowns, ts.opp.firstDowns],
       ['Penalties (Yds)', `${ts.us.penalties} (${ts.us.penaltyYds})`, `${ts.opp.penalties} (${ts.opp.penaltyYds})`],
       ['Interceptions (Turnovers)', ts.us.turnovers, ts.opp.turnovers],
     ];
