@@ -562,7 +562,7 @@ h3{font-size:1rem;margin-bottom:6px}
   <div id="watch-panel" class="hidden">
     <div class="team-header">
       <span class="team-name" id="watch-team">📺 Watching</span>
-      <span style="font-size:0.65rem;color:var(--muted)">v70</span>
+      <span style="font-size:0.65rem;color:var(--muted)">v71</span>
       <span class="logout-btn" onclick="Watch.exit()">Exit</span>
     </div>
     <div class="card">
@@ -4633,8 +4633,33 @@ window.addEventListener('popstate', function(ev){
 // PWA: register service worker for install + offline shell
 // ============================================================
 if('serviceWorker' in navigator){
+  // When a NEW service worker takes control (it calls skipWaiting()+clients.claim()
+  // on install/activate), that means fresh app code is now live — auto-reload ONCE
+  // so installed users pick up updates without a manual reinstall. The _reloading
+  // guard prevents any chance of a reload loop. We only reload on a genuine UPDATE
+  // (a controller already existed) — not on the very first install (no controller
+  // yet), where a reload would be pointless and jarring on first visit.
+  let _swReloading=false;
+  const _hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(_swReloading || !_hadController)return;
+    _swReloading=true;
+    location.reload();
+  });
+
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+    navigator.serviceWorker.register('service-worker.js').then((reg)=>{
+      if(!reg)return;
+      // Ask the browser to check for a new service worker now, then on a timer
+      // and whenever the app regains focus. reg.update() re-fetches the SW file;
+      // if it changed (we bump the CACHE name every release), the new SW installs,
+      // activates (skipWaiting), takes control, and controllerchange fires above.
+      const checkForUpdate=()=>{ try{ reg.update(); }catch(e){} };
+      checkForUpdate();
+      setInterval(checkForUpdate, 60*1000);            // poll every 60s
+      document.addEventListener('visibilitychange',()=>{ if(!document.hidden)checkForUpdate(); });
+      window.addEventListener('focus', checkForUpdate);
+    }).catch(()=>{});
   });
 }
 
