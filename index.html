@@ -433,7 +433,7 @@ h3{font-size:1rem;margin-bottom:6px}
           <button class="key-btn" onclick="Keypad.press('7')">7</button><button class="key-btn" onclick="Keypad.press('8')">8</button><button class="key-btn" onclick="Keypad.press('9')">9</button>
           <button class="key-btn key-clear" onclick="Keypad.clear()">CLR</button><button class="key-btn" onclick="Keypad.press('0')">0</button><button class="key-btn key-done" onclick="Keypad.done()">OK ✓</button>
         </div>
-        <button class="btn btn-secondary" style="margin-top:8px" onclick="Keypad.skip()">Skip (No #)</button>
+        <button class="btn btn-secondary" id="keypad-skip" style="margin-top:8px" onclick="Keypad.skip()">Skip (No #)</button>
       </div>
     </div>
     <div id="step-fieldpick" class="hidden">
@@ -2464,12 +2464,12 @@ const PlayEdit={
       const inp=document.getElementById(`pe-${i}-${k}`);
       if(!inp)continue;
       const nv=inp.value.trim();
-      if(nv===''){alert('Jersey number cannot be blank.');return}
       const ov=String(oldPlayers[k]);
       if(nv!==ov){
-        changed[k]=nv;
-        // Keep the human-readable description in sync: swap #OLD -> #NEW.
-        desc=desc.split('#'+ov).join('#'+nv);
+        changed[k]=nv;   // '' clears the player (e.g. a bogus #99 placeholder)
+        // Keep the human-readable description in sync: swap #OLD -> #NEW (or drop it).
+        if(nv==='')desc=desc.split(' #'+ov).join('').split('#'+ov).join('');
+        else desc=desc.split('#'+ov).join('#'+nv);
       }
     }
     if(Object.keys(changed).length===0){this.cancel(i);return}
@@ -3471,7 +3471,9 @@ const Flow={
     if(t==='penalty'){this.showPenaltyPicker();return}
     if(gameState.possession==='offense'){
       if(t==='pass'){this.playerQueue.push({l:'QB #',k:'qb'});if(r==='complete')this.playerQueue.push({l:'Receiver #',k:'receiver'})}
-      else if(t==='run')this.playerQueue.push({l:'Ball Carrier #',k:'carrier'});
+      // Ball carrier is OPTIONAL: a runner who goes out of bounds untouched, or a
+      // bad snap the offense recovers, has no one to charge — Skip leaves it blank.
+      else if(t==='run')this.playerQueue.push({l:'Ball Carrier # (blank = no one charged)',k:'carrier',opt:true});
       else if(t==='punt'){this.playerQueue.push({l:'Punter #',k:'punter'});if(r==='return')this.playerQueue.push({l:'Flag Pulled By # (tackled returner)',k:'flagPuller'});}
       else if(t==='fg')this.playerQueue.push({l:'Kicker #',k:'kicker'});
     }else{
@@ -3764,7 +3766,7 @@ const Flow={
     }
     if(gameState.possession==='offense'){
       if(c.type==='pass'){if(c.result==='complete')d=`Complete #${p.qb}→#${p.receiver} +${c.yards}yds`;else if(c.result==='incomplete')d=`Incomplete from #${p.qb}`;else if(c.result==='interception')d=`INTERCEPTION on #${p.qb}, returned ${c.yards}yds`;else if(c.result==='sack')d=`Sack on #${p.qb} -${Math.abs(c.yards)}yds`}
-      else if(c.type==='run'){d=c.result==='gain'?`Run #${p.carrier} +${c.yards}yds`:`Run #${p.carrier} -${Math.abs(c.yards)}yds`}
+      else if(c.type==='run'){const rc=p.carrier?`#${p.carrier}`:'(no player)';d=c.result==='gain'?`Run ${rc} +${c.yards}yds`:`Run ${rc} -${Math.abs(c.yards)}yds`}
       else if(c.type==='punt'){const dist=c._puntDist||c.yards;if(c.result==='touchback')d=`Punt #${p.punter} - Touchback`;else if(c.result==='down')d=`Punt #${p.punter} ${dist}yds - Downed by kicking team`;else if(c.result==='faircatch')d=`Punt #${p.punter} ${dist}yds - Fair Catch`;else if(c.result==='return'){d=`Punt #${p.punter} ${c._puntDist}yds - Ret ${c._retYds||c.yards}yds`;if(p.flagPuller)d+=` (flag #${p.flagPuller})`;}else if(c.result==='td')d=`Punt #${p.punter} - RETURNED FOR TD`}
       else if(c.type==='fg'){const dist=c.yards+10;if(c.result==='good')d=`FG GOOD #${p.kicker} (${dist}yd)`;else if(c.result==='wide')d=`FG NO GOOD #${p.kicker} (${dist}yd) - Wide/Endzone → Touchback`;else if(c.result==='short'){if(c._fgShortResult==='touchback')d=`FG SHORT #${p.kicker} (${dist}yd) - Touchback`;else if(c._fgShortResult==='return')d=`FG SHORT #${p.kicker} (${dist}yd) - Returned ${c._fgRetYds||0}yds`;else if(c._fgShortResult==='td')d=`FG SHORT #${p.kicker} (${dist}yd) - RETURNED FOR TD!`}}
     }else{
@@ -4024,7 +4026,10 @@ const Flow={
 // ============================================================
 const Keypad={
   value:'',key:'',optional:false,
-  start(label,key,optional){this.value='';this.key=key;this.optional=optional||false;document.getElementById('keypad-label').textContent=label+(optional?' (optional)':'');document.getElementById('keypad-display').textContent='-';document.getElementById('step-player').classList.remove('hidden')},
+  start(label,key,optional){this.value='';this.key=key;this.optional=optional||false;document.getElementById('keypad-label').textContent=label+(optional?' (optional)':'');document.getElementById('keypad-display').textContent='-';document.getElementById('step-player').classList.remove('hidden');
+    // Only show the "Skip (No #)" button when this player is optional, so the
+    // operator can leave it blank (e.g. runner out of bounds, offensive bad snap).
+    var _sk=document.getElementById('keypad-skip'); if(_sk)_sk.classList.toggle('hidden',!this.optional);},
   press(d){if(this.value.length>=2)return;this.value+=d;document.getElementById('keypad-display').textContent='#'+this.value},
   clear(){this.value='';document.getElementById('keypad-display').textContent='-'},
   skip(){if(!this.optional){return}document.getElementById('step-player').classList.add('hidden');if(XP._waitingForPlayer){XP._player='';XP._waitingForPlayer=false;document.getElementById('play-flow').classList.add('hidden');document.getElementById('panel-xp').classList.remove('hidden');XP.result(XP._result);return}Flow.askNextPlayer()},
@@ -4644,9 +4649,12 @@ const LivePlayEdit={
       const inp=document.getElementById(`live-pe-${idx}-${k}`);
       if(!inp)continue;
       const nv=inp.value.trim();
-      if(nv===''){alert('Jersey number cannot be blank.');return}
       const ov=String(oldPlayers[k]);
-      if(nv!==ov){ changed[k]=nv; desc=desc.split('#'+ov).join('#'+nv); }
+      if(nv!==ov){
+        changed[k]=nv;   // '' clears the player
+        if(nv==='')desc=desc.split(' #'+ov).join('').split('#'+ov).join('');
+        else desc=desc.split('#'+ov).join('#'+nv);
+      }
     }
     if(Object.keys(changed).length===0){this.cancel(idx);return}
 
@@ -4757,7 +4765,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v73';
+var APP_VERSION='v74';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
