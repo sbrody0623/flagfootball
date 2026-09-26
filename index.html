@@ -3299,6 +3299,10 @@ const GameUI={
     document.getElementById('play-flow').classList.remove('hidden');
     this.refresh();Flow.restart();
     if(typeof Recon!=='undefined')Recon.start();   // begin local↔server reconciliation
+    // Ensure the roster is loaded so the off-roster jersey warning can work.
+    if((typeof playerList==='undefined'||!playerList||!playerList.length)&&currentSeason){
+      API.get(`/seasons/${currentSeason.id}/players`).then(pl=>{playerList=pl||[];}).catch(()=>{});
+    }
   },
   refresh(){
     document.getElementById('g-us-s').textContent=currentGame.teamScore;
@@ -3788,8 +3792,29 @@ const Flow={
     return d;
   },
 
+  // OPTION B: which player role a given play normally charges, if any. Used to
+  // confirm before recording a play that unexpectedly has no player.
+  _expectedPlayer(c){
+    const t=c.type,r=c.result,off=(gameState.possession==='offense');
+    if(off){
+      if(t==='run')return {k:'carrier',label:'ball carrier'};
+      if(t==='pass'&&r==='complete')return {k:'receiver',label:'receiver'};
+      if(t==='pass'&&(r==='sack'||r==='interception'||r==='incomplete'))return {k:'qb',label:'QB'};
+      if(t==='punt')return {k:'punter',label:'punter'};
+      if(t==='fg')return {k:'kicker',label:'kicker'};
+    }
+    return null; // defensive plays / others: flag pullers etc. are already optional
+  },
   async confirm(){
     const c=this.current,r=currentSeason.rules;
+    // OPTION B: if this play type normally charges a player but none was entered,
+    // confirm it's intentional (e.g. runner out of bounds / offensive bad snap).
+    const exp=this._expectedPlayer(c);
+    if(exp && !(c.players&&c.players[exp.k])){
+      if(!confirm(`No ${exp.label} entered on this play.\n\nRecord with NO player charged?`)){
+        return; // stay on the confirm screen so they can go back and add one
+      }
+    }
     const prevState=JSON.parse(JSON.stringify(gameState));
     const prevTeamScore=currentGame.teamScore;
     const prevOppScore=currentGame.oppScore;
@@ -4033,8 +4058,26 @@ const Keypad={
   press(d){if(this.value.length>=2)return;this.value+=d;document.getElementById('keypad-display').textContent='#'+this.value},
   clear(){this.value='';document.getElementById('keypad-display').textContent='-'},
   skip(){if(!this.optional){return}document.getElementById('step-player').classList.add('hidden');if(XP._waitingForPlayer){XP._player='';XP._waitingForPlayer=false;document.getElementById('play-flow').classList.add('hidden');document.getElementById('panel-xp').classList.remove('hidden');XP.result(XP._result);return}Flow.askNextPlayer()},
+  // Is this jersey number on OUR roster? Only meaningful for our own players
+  // (QB/receiver/carrier/punter/kicker/etc.); opponent numbers won't be, so we
+  // only warn for roles that represent our team. Returns true if unknown roster.
+  _onRoster(num){
+    if(typeof playerList==='undefined'||!playerList||!playerList.length)return true; // no roster loaded → don't nag
+    return playerList.some(p=>String(p.number)===String(num));
+  },
+  // Roles that are OUR players when we're on offense (warn if off-roster).
+  _ourRoleWhenOffense(k){ return ['qb','receiver','carrier','punter','kicker'].indexOf(k)>=0; },
   done(){
     if(!this.value&&!this.optional){alert('Enter a number');return}
+    // OPTION A: warn if the entered jersey isn't on our roster (catches stray
+    // numbers like a mis-tapped 99). Only for our own offensive skill roles, and
+    // only when a roster is loaded. Operator can still proceed.
+    if(this.value && gameState && gameState.possession==='offense' && this._ourRoleWhenOffense(this.key) && !this._onRoster(this.value)){
+      if(!confirm(`#${this.value} isn't on your roster.\n\nUse this number anyway?`)){
+        // Let them re-enter — keep the keypad open, clear the value.
+        this.clear();return;
+      }
+    }
     document.getElementById('step-player').classList.add('hidden');
     // XP kicker entry — route back to XP, don't write into Flow.current.players
     if(XP._waitingForPlayer){
@@ -4765,7 +4808,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v74';
+var APP_VERSION='v75';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
