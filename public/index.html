@@ -1212,7 +1212,11 @@ const Watch={
     if(type==='xp'&&result==='good'){ const pts=desc.includes('2pt')?2:1; if(desc.includes('Our XP'))team+=pts; else opp+=pts; }
     // Defensive return of a try = 2 pts to the DEFENDING team. Our try picked &
     // returned → opponent +2; opponent's try picked & returned by us → us +2.
-    if(type==='xp'&&desc.includes('(defense +2)')){ if(desc.includes('Our XP'))opp+=2; else team+=2; }
+    // Match either the explicit "(defense +2)" tag OR a try (xp) interception
+    // that was RETURNED FOR TD, so older/variant descriptions still score.
+    if(type==='xp' && (desc.includes('(defense +2)') || (result==='interception' && desc.includes('RETURNED FOR TD')))){
+      if(desc.includes('Our XP'))opp+=2; else team+=2;
+    }
     if(desc.includes('SAFETY')){ // safety = 2 to the defending team
       if(desc.includes('us +2'))team+=2; else if(desc.includes('opp +2'))opp+=2;
     }
@@ -5172,7 +5176,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v77';
+var APP_VERSION='v78';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
