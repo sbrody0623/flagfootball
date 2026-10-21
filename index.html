@@ -472,26 +472,56 @@ h3{font-size:1rem;margin-bottom:6px}
   </div>
   <!-- XP Panel -->
   <div id="panel-xp" class="card hidden">
-    <h3>🎯 Extra Point</h3>
+    <h3>🎯 Extra Point / Try</h3>
     <div class="info-box" id="xp-info"></div>
-    <div class="step-label">Go for 1 or 2?</div>
-    <div class="play-btn-grid">
-      <button class="play-btn" onclick="XP.choose(1)" id="xp-btn-1">1 Point</button>
-      <button class="play-btn" onclick="XP.choose(2)" id="xp-btn-2">2 Points</button>
-    </div>
-    <div id="xp-method" class="hidden" style="margin-top:10px">
-      <div class="step-label">Method (from 3 yd line):</div>
+    <!-- Step 1: go for 1 or 2 -->
+    <div id="xp-step-pts">
+      <div class="step-label">Go for 1 or 2?</div>
       <div class="play-btn-grid">
-        <button class="play-btn" onclick="XP.method('kick')" id="xp-btn-kick">Kick</button>
-        <button class="play-btn" onclick="XP.method('setplay')" id="xp-btn-set">Set Play</button>
+        <button class="play-btn" onclick="XP.choose(1)" id="xp-btn-1">1 Point</button>
+        <button class="play-btn" onclick="XP.choose(2)" id="xp-btn-2">2 Points</button>
       </div>
     </div>
+    <!-- Step 2: method (1pt only) kick vs set play -->
+    <div id="xp-method" class="hidden" style="margin-top:10px">
+      <div class="step-label" id="xp-method-label">Method (1pt from the 3):</div>
+      <div class="play-btn-grid">
+        <button class="play-btn" onclick="XP.method('kick')" id="xp-btn-kick">🦵 Kick</button>
+        <button class="play-btn" onclick="XP.method('setplay')" id="xp-btn-set">🏈 Set Play</button>
+      </div>
+    </div>
+    <!-- Step 3a: KICK result -->
     <div id="xp-result" class="hidden" style="margin-top:10px">
       <div class="step-label">Result:</div>
       <div class="play-btn-grid">
         <button class="play-btn" onclick="XP.result('good')" style="background:#e8f5e9;color:#2e7d32">✅ Good!</button>
         <button class="play-btn" onclick="XP.result('nogood')" style="background:#ffebee;color:#c62828">❌ No Good</button>
       </div>
+    </div>
+    <!-- Step 3b: SET PLAY — pass or run -->
+    <div id="xp-setplay" class="hidden" style="margin-top:10px">
+      <div class="step-label" id="xp-setplay-label">Set play from the 3 — pass or run?</div>
+      <div class="play-btn-grid">
+        <button class="play-btn" onclick="XP.setType('pass')">🎯 Pass</button>
+        <button class="play-btn" onclick="XP.setType('run')">🏃 Run</button>
+      </div>
+    </div>
+    <!-- Step 3c: SET PLAY result (buttons injected per pass/run) -->
+    <div id="xp-setresult" class="hidden" style="margin-top:10px">
+      <div class="step-label" id="xp-setresult-label">Result:</div>
+      <div class="play-btn-grid" id="xp-setresult-btns"></div>
+    </div>
+    <!-- Step 3d: INT return outcome (defender play) -->
+    <div id="xp-intresult" class="hidden" style="margin-top:10px">
+      <div class="step-label">Interception — what happened on the return?</div>
+      <div class="play-btn-grid">
+        <button class="play-btn" onclick="XP.intOutcome('td')" style="background:#ffebee;color:#c62828">🏈 Returned for TD (defense +2)</button>
+        <button class="play-btn" onclick="XP.intOutcome('stop')">🛑 Returned / stopped short (no score)</button>
+      </div>
+    </div>
+    <!-- Penalty entry point (always available while recording a try) -->
+    <div id="xp-penalty-row" class="hidden" style="margin-top:10px">
+      <button class="btn btn-sm" style="background:#fff3e0;color:#e65100;width:100%" onclick="XP.addPenalty()">🚩 Penalty on the try</button>
     </div>
   </div>
   <!-- Controls -->
@@ -1180,6 +1210,9 @@ const Watch={
     }
     if(type==='fg'&&result==='good'){ us?team+=3:opp+=3; }
     if(type==='xp'&&result==='good'){ const pts=desc.includes('2pt')?2:1; if(desc.includes('Our XP'))team+=pts; else opp+=pts; }
+    // Defensive return of a try = 2 pts to the DEFENDING team. Our try picked &
+    // returned → opponent +2; opponent's try picked & returned by us → us +2.
+    if(type==='xp'&&desc.includes('(defense +2)')){ if(desc.includes('Our XP'))opp+=2; else team+=2; }
     if(desc.includes('SAFETY')){ // safety = 2 to the defending team
       if(desc.includes('us +2'))team+=2; else if(desc.includes('opp +2'))opp+=2;
     }
@@ -2580,15 +2613,39 @@ const Stats={
             kicking[p.kicker].fgDetails.push(`${dist}yd ✗`);
           }
         }
-        // EXTRA POINTS (our XP plays)
+        // EXTRA POINTS / TRIES (our XP plays)
         if(type==='xp'){
           const desc=play.description||'';
           if(desc.includes('Our XP')){
-            // Use the recorded kicker/player #; fall back to 'Team' only if none saved
-            const xpKey=(p.kicker&&p.kicker!=='')?p.kicker:'Team';
-            if(!kicking[xpKey])kicking[xpKey]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};
-            kicking[xpKey].xpAtt++;
-            if(result==='good')kicking[xpKey].xpMade++;
+            const setType=p._xpSet;   // 'pass' | 'run' | undefined(kick)
+            const good=(result==='good');
+            const xpYds=play.yards||0;
+            if(setType==='pass'){
+              // Credit the QB/receiver like a normal pass (even if the try failed).
+              if(p.qb){
+                if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0};
+                passing[p.qb].att++;
+                if(result==='good'||desc.includes('Short')){ passing[p.qb].comp++; passing[p.qb].yds+=xpYds; }
+                if(result==='interception')passing[p.qb].int++;
+              }
+              if(p.receiver&&(result==='good'||desc.includes('Short'))){
+                if(!receiving[p.receiver])receiving[p.receiver]={rec:0,yds:0,td:0,long:0};
+                receiving[p.receiver].rec++; receiving[p.receiver].yds+=xpYds;
+                if(xpYds>receiving[p.receiver].long)receiving[p.receiver].long=xpYds;
+              }
+            }else if(setType==='run'){
+              if(p.carrier){
+                if(!rushing[p.carrier])rushing[p.carrier]={att:0,yds:0,td:0,long:0};
+                rushing[p.carrier].att++; rushing[p.carrier].yds+=xpYds;
+                if(xpYds>rushing[p.carrier].long)rushing[p.carrier].long=xpYds;
+              }
+            }else{
+              // Kicked PAT — tracked in the Kicking table (kicker #).
+              const xpKey=(p.kicker&&p.kicker!=='')?p.kicker:'Team';
+              if(!kicking[xpKey])kicking[xpKey]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};
+              kicking[xpKey].xpAtt++;
+              if(good)kicking[xpKey].xpMade++;
+            }
           }
         }
       }
@@ -2629,6 +2686,19 @@ const Stats={
           puntRet[p.returner].ret++;
           puntRet[p.returner].yds+=rYds;
           if(rYds>puntRet[p.returner].long)puntRet[p.returner].long=rYds;
+        }
+        // OUR defender breaking up / picking off the OPPONENT's try.
+        if(type==='xp'){
+          if(result==='interception'&&p.interceptor){
+            if(!defense[p.interceptor])defense[p.interceptor]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
+            defense[p.interceptor].int++;
+          }else if(p.defender){
+            if(!defense[p.defender])defense[p.defender]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
+            defense[p.defender].pd++;
+          }else if(p.flagPuller){
+            if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
+            defense[p.flagPuller].tackles++;
+          }
         }
       }
     }
@@ -2969,7 +3039,26 @@ const Stats={
         if(type==='punt'&&p.punter){if(!punting[p.punter])punting[p.punter]={punts:0,yds:0,long:0};punting[p.punter].punts++;punting[p.punter].yds+=yds;if(yds>punting[p.punter].long)punting[p.punter].long=yds;}
         if(type==='punt'&&result==='return'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
         if(type==='fg'&&p.kicker){if(!kicking[p.kicker])kicking[p.kicker]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};kicking[p.kicker].fgAtt++;const dist=yds+10;if(result==='good'){kicking[p.kicker].fgMade++;kicking[p.kicker].fgDetails.push(`${dist}yd ✓`);ensScore(p.kicker);scoring[p.kicker].fg++;scoring[p.kicker].fgAtt++;scoring[p.kicker].pts+=3;}else{kicking[p.kicker].fgDetails.push(`${dist}yd ✗`);ensScore(p.kicker);scoring[p.kicker].fgAtt++;}}
-        if(type==='xp'){const desc=play.description||'';if(desc.includes('Our XP')){const k=(p.kicker&&p.kicker!=='')?p.kicker:'Team';if(!kicking[k])kicking[k]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};kicking[k].xpAtt++;ensScore(k);scoring[k].xpAtt++;if(result==='good'){kicking[k].xpMade++;scoring[k].xp++;scoring[k].pts+=(desc.includes('2pt')?2:1);}}}
+        if(type==='xp'&&(play.description||'').includes('Our XP')){
+          const desc=play.description||'';
+          const setType=p._xpSet;            // 'pass' | 'run' | undefined(kick)
+          const good=(result==='good');
+          const is2=desc.includes('2pt');
+          const gotYds=(good||desc.includes('Short'));   // completed/short credits yards
+          if(setType==='pass'){
+            if(p.qb){if(!passing[p.qb])passing[p.qb]={att:0,comp:0,yds:0,td:0,int:0,sacks:0,long:0};passing[p.qb].att++;if(gotYds){passing[p.qb].comp++;passing[p.qb].yds+=yds;if(yds>passing[p.qb].long)passing[p.qb].long=yds;}if(result==='interception')passing[p.qb].int++;}
+            if(p.receiver&&gotYds){if(!receiving[p.receiver])receiving[p.receiver]={rec:0,yds:0,td:0,long:0};receiving[p.receiver].rec++;receiving[p.receiver].yds+=yds;if(yds>receiving[p.receiver].long)receiving[p.receiver].long=yds;}
+            if(good&&p.receiver){ensScore(p.receiver);scoring[p.receiver].pts+=(is2?2:1);}
+          }else if(setType==='run'){
+            if(p.carrier){if(!rushing[p.carrier])rushing[p.carrier]={att:0,yds:0,td:0,long:0};rushing[p.carrier].att++;rushing[p.carrier].yds+=yds;if(yds>rushing[p.carrier].long)rushing[p.carrier].long=yds;if(good){ensScore(p.carrier);scoring[p.carrier].pts+=(is2?2:1);}}
+          }else{
+            // Kicked PAT
+            const k=(p.kicker&&p.kicker!=='')?p.kicker:'Team';
+            if(!kicking[k])kicking[k]={fgAtt:0,fgMade:0,fgDetails:[],xpAtt:0,xpMade:0};
+            kicking[k].xpAtt++;ensScore(k);scoring[k].xpAtt++;
+            if(good){kicking[k].xpMade++;scoring[k].xp++;scoring[k].pts+=(is2?2:1);}
+          }
+        }
       }
       if(side==='defense'){
         if(type==='pass'){
@@ -2981,6 +3070,12 @@ const Stats={
         if(type==='run'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
         if(type==='fgblock'&&result==='blocked'&&p.blocker){ensD(defense,p.blocker);defense[p.blocker].pd++;}
         if(type==='puntreturn'&&result==='return'&&p.returner){const r=(p._retYds!==undefined?p._retYds:0);if(!puntRet[p.returner])puntRet[p.returner]={ret:0,yds:0,long:0};puntRet[p.returner].ret++;puntRet[p.returner].yds+=r;if(r>puntRet[p.returner].long)puntRet[p.returner].long=r;}
+        // OUR defender on the OPPONENT's try (pick / breakup / stop).
+        if(type==='xp'){
+          if(result==='interception'&&p.interceptor){ensD(defense,p.interceptor);defense[p.interceptor].int++;if(!ints[p.interceptor])ints[p.interceptor]={int:0,yds:0,pd:0};ints[p.interceptor].int++;}
+          else if(p.defender){ensD(defense,p.defender);defense[p.defender].pd++;}
+          else if(p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+        }
       }
     }
 
@@ -3113,23 +3208,25 @@ const Stats={
         if(type==='punt'&&p.punter){ add(p.punter,'PuntNum',1); add(p.punter,'PuntYards',yds); max(p.punter,'PuntLong',yds); }
         if(type==='punt'&&result==='return'&&p.flagPuller){ add(p.flagPuller,'TotalFlagPulls',1); }
         if(type==='fg'&&p.kicker){ add(p.kicker,'FieldGoalsAttempted',1); if(result==='good'){add(p.kicker,'FieldGoalsMade',1);add(p.kicker,'TotalPoints',3);} }
-        if(type==='xp'&&desc.includes('Our XP')){ const k=(p.kicker&&p.kicker!=='')?p.kicker:null;
-          if(k){
-            const good=(result==='good');
-            const isKick=desc.includes('kick');      // "1pt kick"
-            const is2pt=desc.includes('2pt');         // "2pt set play"
-            if(isKick){
-              // Kicked PAT -> MaxPreps Extra Points (kicking)
-              add(k,'ExtraPointsAttempted',1);
-              if(good){ add(k,'ExtraPointsMade',1); add(k,'TotalPoints',1); }
-            }else if(is2pt){
-              // 2-point conversion (set play) -> Try (2 pt)
-              if(good){ add(k,'TryMade2Pt',1); add(k,'TotalTryPoints',2); add(k,'TotalPoints',2); }
-            }else{
-              // 1-point conversion (set play) -> Try (1 pt)
-              if(good){ add(k,'TryMade1Pt',1); add(k,'TotalTryPoints',1); add(k,'TotalPoints',1); }
-            }
-          } }
+        if(type==='xp'&&desc.includes('Our XP')){
+          const good=(result==='good');
+          const is2pt=desc.includes('2pt');
+          const setType=p._xpSet;                 // 'pass' | 'run' | undefined(kick)
+          const gotYds=(good||desc.includes('Short'));
+          if(!setType){
+            // Kicked PAT -> MaxPreps Extra Points (kicking)
+            const k=(p.kicker&&p.kicker!=='')?p.kicker:null;
+            if(k){ add(k,'ExtraPointsAttempted',1); if(good){ add(k,'ExtraPointsMade',1); add(k,'TotalPoints',1); } }
+          }else if(setType==='pass'){
+            // Credit QB/receiver like an offensive pass; the scorer gets the Try.
+            if(p.qb){ add(p.qb,'PassingAtt',1); if(gotYds){ add(p.qb,'PassingComp',1); add(p.qb,'PassingYards',yds); max(p.qb,'PassingLong',yds); } if(result==='interception')add(p.qb,'PassingInt',1); }
+            if(p.receiver&&gotYds){ add(p.receiver,'ReceivingNum',1); add(p.receiver,'ReceivingYards',yds); max(p.receiver,'ReceivingLong',yds); }
+            if(good&&p.receiver){ if(is2pt){ add(p.receiver,'TryMade2Pt',1); add(p.receiver,'TotalTryPoints',2); add(p.receiver,'TotalPoints',2);} else { add(p.receiver,'TryMade1Pt',1); add(p.receiver,'TotalTryPoints',1); add(p.receiver,'TotalPoints',1);} }
+          }else if(setType==='run'){
+            if(p.carrier){ add(p.carrier,'RushingNum',1); add(p.carrier,'RushingYards',yds); max(p.carrier,'RushingLong',yds);
+              if(good){ if(is2pt){ add(p.carrier,'TryMade2Pt',1); add(p.carrier,'TotalTryPoints',2); add(p.carrier,'TotalPoints',2);} else { add(p.carrier,'TryMade1Pt',1); add(p.carrier,'TotalTryPoints',1); add(p.carrier,'TotalPoints',1);} } }
+          }
+        }
       }else{ // defense
         if(type==='pass'){
           if(result==='complete'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
@@ -3140,6 +3237,11 @@ const Stats={
         if(type==='run'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
         if(type==='fgblock'&&result==='blocked'&&p.blocker)add(p.blocker,'PassesDefensed',1);
         if(type==='puntreturn'&&result==='return'&&p.returner){ add(p.returner,'PuntReturnNum',1); add(p.returner,'PuntReturnYards',(p._retYds!==undefined?p._retYds:0)); max(p.returner,'PuntReturnLong',(p._retYds!==undefined?p._retYds:0)); if(isTD){add(p.returner,'PuntReturnedTDNum',1);add(p.returner,'TotalTDNum',1);add(p.returner,'TotalPoints',6);} }
+        // OUR defender on the OPPONENT's try (pick / breakup).
+        if(type==='xp'){
+          if(result==='interception'&&p.interceptor)add(p.interceptor,'INTs',1);
+          else if(p.defender)add(p.defender,'PassesDefensed',1);
+        }
       }
     }
 
@@ -4057,7 +4159,13 @@ const Keypad={
     var _sk=document.getElementById('keypad-skip'); if(_sk)_sk.classList.toggle('hidden',!this.optional);},
   press(d){if(this.value.length>=2)return;this.value+=d;document.getElementById('keypad-display').textContent='#'+this.value},
   clear(){this.value='';document.getElementById('keypad-display').textContent='-'},
-  skip(){if(!this.optional){return}document.getElementById('step-player').classList.add('hidden');if(XP._waitingForPlayer){XP._player='';XP._waitingForPlayer=false;document.getElementById('play-flow').classList.add('hidden');document.getElementById('panel-xp').classList.remove('hidden');XP.result(XP._result);return}Flow.askNextPlayer()},
+  skip(){if(!this.optional){return}document.getElementById('step-player').classList.add('hidden');
+    if(XP._waitingForPlayer){
+      XP._waitingForPlayer=false;
+      if(XP._kickMode){ XP._player=''; document.getElementById('play-flow').classList.add('hidden'); document.getElementById('panel-xp').classList.remove('hidden'); XP.result(XP._result); return; }
+      XP._gotPlayer(''); return;   // set-play / INT player collection (optional skip)
+    }
+    Flow.askNextPlayer()},
   // Is this jersey number on OUR roster? Only meaningful for our own players
   // (QB/receiver/carrier/punter/kicker/etc.); opponent numbers won't be, so we
   // only warn for roles that represent our team. Returns true if unknown roster.
@@ -4079,12 +4187,18 @@ const Keypad={
       }
     }
     document.getElementById('step-player').classList.add('hidden');
-    // XP kicker entry — route back to XP, don't write into Flow.current.players
+    // XP entry — route back to XP, don't write into Flow.current.players
     if(XP._waitingForPlayer){
-      XP._player=this.value||'';XP._waitingForPlayer=false;
-      document.getElementById('play-flow').classList.add('hidden');
-      document.getElementById('panel-xp').classList.remove('hidden');
-      XP.result(XP._result);return;
+      XP._waitingForPlayer=false;
+      if(XP._kickMode){
+        // Kick path: collect the single kicker number, then score.
+        XP._player=this.value||'';
+        document.getElementById('play-flow').classList.add('hidden');
+        document.getElementById('panel-xp').classList.remove('hidden');
+        XP.result(XP._result);return;
+      }
+      // Set-play / INT path: collect this player, continue the XP queue.
+      XP._gotPlayer(this.value||'');return;
     }
     if(this.value)Flow.current.players[this.key]=this.value;
     Flow.askNextPlayer();
@@ -4100,7 +4214,10 @@ const YardPad={
   press(d){if(this.value.length>=3)return;this.value+=d;this.render()},
   negate(){this.negative=!this.negative;this.render()},
   render(){document.getElementById('yards-display').textContent=(this.negative?'-':'')+(this.value||'0')},
-  done(){const v=parseInt(this.value||'0');document.getElementById('step-yards').classList.add('hidden');Flow.onYardsDone(this.negative?-v:v)}
+  done(){const v=parseInt(this.value||'0');document.getElementById('step-yards').classList.add('hidden');
+    // XP set-play short-yardage entry routes back into XP, not Flow.
+    if(XP._waitingYards){ XP._gotYards(this.negative?-v:v); return; }
+    Flow.onYardsDone(this.negative?-v:v)}
 };
 
 // ============================================================
@@ -4413,65 +4530,295 @@ const FieldPick={
 // ============================================================
 // EXTRA POINT
 // ============================================================
+// The extra-point / try flow. Supports:
+//  - 1pt: Kick OR Set Play (from the 3);  2pt: Set Play only (from the 10)
+//  - Set plays are real snaps: pass (QB→receiver) or run (runner), crediting
+//    yardage like a normal offensive play even if the try is no good / short.
+//  - Interception on a set-play pass: defender credited; returned-for-TD = defense +2.
+//  - Full penalty picker (flag on the try).
+// Description substrings "Our XP"/"Opp XP", "2pt", "kick" are preserved so the
+// box score, MaxPreps export, replay scoring and watch view keep working.
 const XP={
   team:'team',pts:0,meth:'',
   show(team){
     this.team=team;this.pts=0;this.meth='';
-    // Reset per-attempt state so a previous XP's kicker # doesn't carry over
+    // Reset per-attempt state.
     this._player=null;this._result=null;this._waitingForPlayer=false;
+    this._setType=null; this._players={}; this._pq=[]; this._pendingAfter=null;
+    this._setResult=null; this._flag=null; this._setYards=0;
     document.getElementById('play-flow').classList.add('hidden');
     document.getElementById('game-ctrls').classList.add('hidden');
     document.getElementById('panel-xp').classList.remove('hidden');
-    document.getElementById('xp-method').classList.add('hidden');
-    document.getElementById('xp-result').classList.add('hidden');
+    // Reset all sub-steps to hidden; show step 1.
+    ['xp-method','xp-result','xp-setplay','xp-setresult','xp-intresult'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+    document.getElementById('xp-step-pts').classList.remove('hidden');
+    document.getElementById('xp-penalty-row').classList.remove('hidden');
     document.getElementById('xp-btn-1').classList.remove('selected');
     document.getElementById('xp-btn-2').classList.remove('selected');
     const teamName=localStorage.getItem('ff_team_name')||'Us';
-    document.getElementById('xp-info').textContent=team==='team'?`${teamName} scored! Extra point:`:`${currentGame.opponent} scored! Their XP:`;
+    document.getElementById('xp-info').textContent=team==='team'?`${teamName} scored! Extra point / try:`:`${currentGame.opponent} scored! Their try:`;
     document.getElementById('xp-btn-kick').classList.toggle('hidden',!currentSeason.rules.xpKickAllowed);
     GameUI.refresh();
   },
-  choose(p){this.pts=p;document.getElementById('xp-btn-1').classList.toggle('selected',p===1);document.getElementById('xp-btn-2').classList.toggle('selected',p===2);
-    if(p===1)document.getElementById('xp-method').classList.remove('hidden');
-    else{document.getElementById('xp-method').classList.add('hidden');document.getElementById('xp-result').classList.remove('hidden')}
+  // The try line of scrimmage: 1pt from the 3, 2pt from the 10 (yards to goal).
+  _tryYd(){ return this.pts===2?10:3; },
+  choose(p){
+    this.pts=p;
+    document.getElementById('xp-btn-1').classList.toggle('selected',p===1);
+    document.getElementById('xp-btn-2').classList.toggle('selected',p===2);
+    if(p===1){
+      // 1pt → choose kick or set play.
+      document.getElementById('xp-method-label').textContent='1pt — kick or set play (from the 3)?';
+      document.getElementById('xp-method').classList.remove('hidden');
+      document.getElementById('xp-setplay').classList.add('hidden');
+      document.getElementById('xp-result').classList.add('hidden');
+    }else{
+      // 2pt → set play only, from the 10.
+      this.meth='setplay';
+      document.getElementById('xp-method').classList.add('hidden');
+      document.getElementById('xp-result').classList.add('hidden');
+      document.getElementById('xp-setplay-label').textContent='2pt set play from the 10 — pass or run?';
+      document.getElementById('xp-setplay').classList.remove('hidden');
+    }
   },
-  method(m){this.meth=m;document.getElementById('xp-btn-kick').classList.toggle('selected',m==='kick');document.getElementById('xp-btn-set').classList.toggle('selected',m==='setplay');document.getElementById('xp-result').classList.remove('hidden')},
-  async result(r){
-    // If it's our team's XP, ask for kicker/player #
-    if(this.team==='team'&&!this._player){
-      this._result=r;
-      // Show keypad to get the player number
+  method(m){
+    this.meth=m;
+    document.getElementById('xp-btn-kick').classList.toggle('selected',m==='kick');
+    document.getElementById('xp-btn-set').classList.toggle('selected',m==='setplay');
+    if(m==='kick'){
+      document.getElementById('xp-setplay').classList.add('hidden');
+      document.getElementById('xp-result').classList.remove('hidden');   // kick good/no-good
+    }else{
+      document.getElementById('xp-result').classList.add('hidden');
+      document.getElementById('xp-setplay-label').textContent='1pt set play from the 3 — pass or run?';
+      document.getElementById('xp-setplay').classList.remove('hidden');
+    }
+  },
+
+  // ---- SET PLAY ----
+  setType(t){
+    this._setType=t;
+    document.getElementById('xp-setplay').classList.add('hidden');
+    const tryYd=this._tryYd();
+    const el=document.getElementById('xp-setresult-btns');
+    if(t==='pass'){
+      el.innerHTML=`
+        <button class="play-btn" onclick="XP.setResult('complete')" style="background:#e8f5e9;color:#2e7d32">✅ Complete — SCORED</button>
+        <button class="play-btn" onclick="XP.setResult('short')">➖ Complete — short (no score)</button>
+        <button class="play-btn" onclick="XP.setResult('incomplete')" style="background:#ffebee;color:#c62828">❌ Incomplete</button>
+        <button class="play-btn" onclick="XP.setResult('interception')" style="background:#ffebee;color:#c62828">🔴 Intercepted</button>`;
+    }else{
+      el.innerHTML=`
+        <button class="play-btn" onclick="XP.setResult('scored')" style="background:#e8f5e9;color:#2e7d32">✅ Run — SCORED</button>
+        <button class="play-btn" onclick="XP.setResult('shortrun')" style="background:#ffebee;color:#c62828">➖ Run — stopped short</button>`;
+    }
+    document.getElementById('xp-setresult-label').textContent=(t==='pass'?'Pass':'Run')+` from the ${tryYd} — result?`;
+    document.getElementById('xp-setresult').classList.remove('hidden');
+  },
+  setResult(r){
+    this._setResult=r;
+    document.getElementById('xp-setresult').classList.add('hidden');
+    // Decide who we need to collect, and the stat yardage for the skill players.
+    const tryYd=this._tryYd();
+    const scored=(r==='complete'||r==='scored');
+    // Yardage credited to skill players: full try distance if they scored,
+    // otherwise a "short" gain (we ask), incomplete/INT = 0 passing yards.
+    if(this.team==='team'){
+      if(this._setType==='pass'){
+        this._pq=[{l:'QB #',k:'qb'}];
+        if(r==='complete'||r==='short')this._pq.push({l:'Receiver #',k:'receiver'});
+        if(r==='interception')this._pq.push({l:'Intercepted By # (defender)',k:'interceptor'});
+        if(r==='incomplete')this._pq.push({l:'Defended By # (optional)',k:'defender',opt:true});
+      }else{ // run
+        this._pq=[{l:'Runner #',k:'carrier'}];
+        if(r==='shortrun')this._pq.push({l:'Flag Pulled By # (optional)',k:'flagPuller',opt:true});
+      }
+    }else{
+      // Opponent's try: we only track OUR defenders.
+      if(this._setType==='pass'){
+        if(r==='interception'){ /* our pick of their try — unusual; credit our INT */ this._pq=[{l:'Intercepted By # (us)',k:'interceptor'}]; }
+        else if(r==='incomplete'){ this._pq=[{l:'Defended By # (optional)',k:'defender',opt:true}]; }
+        else if(r==='complete'||r==='short'){ this._pq=[{l:'Flag Pulled By # (optional)',k:'flagPuller',opt:true}]; }
+        else this._pq=[];
+      }else{
+        this._pq=[{l:'Flag Pulled By # (optional)',k:'flagPuller',opt:true}];
+      }
+    }
+    // Scored plays use the full try distance; "short" plays ask for the yards.
+    this._setYards = scored ? tryYd : null;   // null = need to ask (short only)
+    this._afterPlayers=()=>{
+      if(r==='interception'){
+        // After the interceptor #, ask what happened on the return (TD vs stop).
+        document.getElementById('play-flow').classList.add('hidden');
+        document.getElementById('panel-xp').classList.remove('hidden');
+        document.getElementById('xp-intresult').classList.remove('hidden');
+        return;
+      }
+      if(this._setYards===null && (r==='short'||r==='shortrun')){
+        // Ask how far the short play gained (0..tryYd-1 typically).
+        XP._askShortYards();
+      }else{
+        XP._finishSet();
+      }
+    };
+    this._collectNext();
+  },
+  _collectNext(){
+    if(this._pq && this._pq.length){
+      const p=this._pq.shift();
+      this._waitingForPlayer=true; this._pqKey=p.k;
       document.getElementById('panel-xp').classList.add('hidden');
       document.getElementById('play-flow').classList.remove('hidden');
-      Keypad.start(this.meth==='kick'?'Kicker #':'Player #','_xpPlayer',false);
-      // Override the next player done to come back here
-      this._waitingForPlayer=true;
+      Keypad.start(p.l,p.k,p.opt||false);
+    }else{
+      this._waitingForPlayer=false;
+      if(this._afterPlayers)this._afterPlayers();
+    }
+  },
+  // Keypad calls this back for each collected number (via the XP handshake).
+  _gotPlayer(num){
+    if(this._pqKey)this._players[this._pqKey]=num||'';
+    this._pqKey=null;
+    document.getElementById('play-flow').classList.add('hidden');
+    document.getElementById('panel-xp').classList.remove('hidden');
+    this._collectNext();
+  },
+  _askShortYards(){
+    // Reuse the yard pad to collect the short gain, then finish.
+    document.getElementById('panel-xp').classList.add('hidden');
+    document.getElementById('play-flow').classList.remove('hidden');
+    XP._waitingYards=true;
+    YardPad.start(`Yards gained (short of the ${this._tryYd()})`);
+  },
+  _gotYards(v){
+    this._waitingYards=false;
+    this._setYards=Math.max(0,Math.abs(v||0));
+    document.getElementById('play-flow').classList.add('hidden');
+    document.getElementById('panel-xp').classList.remove('hidden');
+    this._finishSet();
+  },
+
+  // ---- INTERCEPTION outcome (defender play) ----
+  intOutcome(o){
+    this._intOutcome=o; // 'td' (defense +2) or 'stop'
+    document.getElementById('xp-intresult').classList.add('hidden');
+    this._finishSet();
+  },
+
+  // ---- KICK result (unchanged behavior) ----
+  async result(r){
+    if(this.team==='team'&&!this._player){
+      this._result=r;
+      document.getElementById('panel-xp').classList.add('hidden');
+      document.getElementById('play-flow').classList.remove('hidden');
+      Keypad.start('Kicker #','_xpPlayer',false);
+      this._waitingForPlayer=true; this._kickMode=true;
       return;
     }
-    const scored=r==='good'?this.pts:0;
-    if(this.team==='team')currentGame.teamScore+=scored;else currentGame.oppScore+=scored;
-    const mLabel=this.pts===2?'2pt set play':(this.meth==='kick'?'1pt kick':'1pt set play');
+    const good=(r==='good');
+    const scored=good?this.pts:0;
+    if(this.team==='team')currentGame.teamScore+=scored; else currentGame.oppScore+=scored;
     const playerNum=this._player||'';
-    const desc=`${this.team==='team'?'Our':'Opp'} XP: ${mLabel}${playerNum?' #'+playerNum:''} - ${r==='good'?'GOOD':'No Good'}`;
-    const play={playNumber:gamePlays.length+1,possession:this.team==='team'?'offense':'defense',playType:'xp',result:r,players:{kicker:playerNum},yards:0,downBefore:0,ballPosBefore:0,description:desc,quarter:gameState.quarter||1,clientUid:Cache.uid(),_gameId:currentGame.id};
+    const desc=`${this.team==='team'?'Our':'Opp'} XP: 1pt kick${playerNum?' #'+playerNum:''} - ${good?'GOOD':'No Good'}`;
+    await this._commit({result:r, players:{kicker:playerNum}, yards:0, description:desc});
+  },
+
+  // ---- Finalize a SET PLAY try (pass/run/INT) ----
+  async _finishSet(){
+    const r=this._setResult, t=this._setType, tryYd=this._tryYd();
+    const P=this._players||{};
+    const us=(this.team==='team');
+    const ptsLabel = this.pts===2?'2pt set play':'1pt set play';
+    let scoredPts=0, defPts=0, result='nogood', yards=0, desc='';
+    const who = us?'Our':'Opp';
+
+    if(r==='interception'){
+      // Try intercepted. If returned for TD, the DEFENSE gets 2 (always).
+      result='interception'; yards=0;
+      const defNum = P.interceptor?` #${P.interceptor}`:'';
+      if(this._intOutcome==='td'){
+        // Defense of the OTHER team returns it. If OUR try was picked & returned,
+        // the OPPONENT scores 2; if the OPPONENT's try was picked & returned, WE score 2.
+        if(us)currentGame.oppScore+=2; else currentGame.teamScore+=2;
+        defPts=2;
+        desc=`${who} XP: ${ptsLabel} INTERCEPTED${defNum} → RETURNED FOR TD (defense +2)`;
+      }else{
+        desc=`${who} XP: ${ptsLabel} INTERCEPTED${defNum} - No Good`;
+      }
+    }else{
+      const scored=(r==='complete'||r==='scored');
+      result = scored?'good':'nogood';
+      // Skill-position yardage: full try distance on a score, else the short gain.
+      yards = scored?tryYd:(this._setYards||0);
+      scoredPts = scored?this.pts:0;
+      if(us)currentGame.teamScore+=scoredPts; else currentGame.oppScore+=scoredPts;
+      // Description — keep "2pt"/"set play" tokens; include skill players.
+      if(t==='pass'){
+        const pc=P.qb?` #${P.qb}`:''; const rc=P.receiver?`→#${P.receiver}`:'';
+        if(scored)desc=`${who} XP: ${ptsLabel} pass${pc}${rc} +${yards}yds - GOOD`;
+        else if(r==='short')desc=`${who} XP: ${ptsLabel} pass${pc}${rc} +${yards}yds - Short, No Good`;
+        else desc=`${who} XP: ${ptsLabel} pass${pc} - Incomplete, No Good`;
+      }else{
+        const rc=P.carrier?` #${P.carrier}`:'';
+        if(scored)desc=`${who} XP: ${ptsLabel} run${rc} +${yards}yds - GOOD`;
+        else desc=`${who} XP: ${ptsLabel} run${rc} +${yards}yds - Short, No Good`;
+      }
+    }
+    // Persist. players carries the skill/defender numbers; _setYards drives stats.
+    const players=Object.assign({}, P);
+    await this._commit({result, players, yards, description:desc, setType:t, defReturnTD:(this._intOutcome==='td')});
+  },
+
+  // ---- Shared commit: build the xp play, score already applied, switch possession ----
+  async _commit(opts){
+    const play={
+      playNumber:gamePlays.length+1,
+      possession:this.team==='team'?'offense':'defense',
+      playType:'xp',
+      result:opts.result,
+      players:opts.players||{},
+      yards:opts.yards||0,
+      downBefore:0, ballPosBefore:0,
+      description:opts.description,
+      quarter:gameState.quarter||1,
+      clientUid:Cache.uid(), _gameId:currentGame.id
+    };
+    if(opts.setType)play.players._xpSet=opts.setType;        // 'pass' | 'run' (for stat parsing)
+    if(opts.defReturnTD)play.players._xpDefTD=1;             // defense returned for 2
     gamePlays.push(play);
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
-    // After the XP: other team gets the ball. In OT, they start 1st & Goal at the 10.
+    // After the try: other team gets the ball (OT: 1st & goal at the 10).
     if(gameState.overtime){
       if(this.team==='team')Engine.switchDef(gameState.fieldLength-10);else Engine.switchOff(gameState.fieldLength-10);
     }else{
       const afterYd=currentSeason.rules.afterScoreYd||14;
       if(this.team==='team')Engine.switchDef(afterYd);else Engine.switchOff(afterYd);
     }
-    // Offer onside if the scoring team is still trailing (2nd half)
     Engine.checkOnsideOffer(this.team);
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
     Cache.saveLocal();
-    this._player=null;this._result=null;this._waitingForPlayer=false;
+    // Reset transient state and return to the normal play flow.
+    this._player=null;this._result=null;this._waitingForPlayer=false;this._kickMode=false;
+    this._setType=null;this._players={};this._pq=[];this._setResult=null;this._intOutcome=null;this._setYards=0;
     document.getElementById('panel-xp').classList.add('hidden');
     document.getElementById('play-flow').classList.remove('hidden');
     document.getElementById('game-ctrls').classList.remove('hidden');
-    GameUI.refresh();Flow.restart()
+    GameUI.refresh();Flow.restart();
+  },
+
+  // ---- PENALTY on the try: reuse the standalone penalty flow ----
+  addPenalty(){
+    // Record the penalty as its own play (pre-snap/dead-ball on the try). The
+    // operator then re-attempts the try from the menu if needed. We route into
+    // the normal penalty picker with possession reflecting the kicking team.
+    gameState.possession = (this.team==='team')?'offense':'defense';
+    document.getElementById('panel-xp').classList.add('hidden');
+    document.getElementById('play-flow').classList.remove('hidden');
+    document.getElementById('game-ctrls').classList.remove('hidden');
+    Flow.restart();
+    Flow.current.type='penalty';
+    Flow.current._xpTry=true;   // note: penalty occurred on a try
+    Flow.showPenaltyPicker();
   }
 };
 
@@ -4808,7 +5155,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v75';
+var APP_VERSION='v76';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
