@@ -467,6 +467,7 @@ h3{font-size:1rem;margin-bottom:6px}
       <div class="info-box" id="confirm-summary"></div>
       <button class="btn btn-success btn-lg" onclick="Flow.confirm()">✓ Record Play</button>
       <button class="btn btn-sm" id="flag-on-play-btn" style="background:#fff3e0;color:#e65100" onclick="Flow.addFlag()">🚩 Flag on the play</button>
+      <button class="btn btn-sm" id="qb-hurry-btn" style="background:#e3f2fd;color:#1565c0" onclick="Flow.addHurry()">⚡ QB Hurry</button>
       <button class="btn btn-secondary" onclick="Flow.restart()">✗ Cancel</button>
     </div>
   </div>
@@ -2656,6 +2657,12 @@ const Stats={
 
       if(side==='defense'){
         // DEFENSE STATS
+        // QB hurry (judgment call) — credited to the pressuring defender on any
+        // opponent pass play, independent of the pass result.
+        if(type==='pass'&&p._hurry){
+          if(!defense[p._hurry])defense[p._hurry]={tackles:0,sacks:0,int:0,intYds:0,pd:0,hurries:0};
+          defense[p._hurry].hurries=(defense[p._hurry].hurries||0)+1;
+        }
         if(type==='pass'){
           if(result==='complete'&&p.flagPuller){
             if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
@@ -2738,8 +2745,8 @@ const Stats={
     // DEFENSE
     const defKeys=Object.keys(defense);
     if(defKeys.length){
-      html+=`<div class="card"><h3>🛡️ Defense</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Tkl</td><td>Sck</td><td>INT</td><td>INT Yds</td><td>PD</td></tr>`;
-      for(const num of defKeys){const s=defense[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.tackles}</td><td>${s.sacks}</td><td>${s.int}</td><td>${s.intYds}</td><td>${s.pd}</td></tr>`}
+      html+=`<div class="card"><h3>🛡️ Defense</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Tkl</td><td>Sck</td><td>INT</td><td>INT Yds</td><td>PD</td><td>Hur</td></tr>`;
+      for(const num of defKeys){const s=defense[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.tackles}</td><td>${s.sacks}</td><td>${s.int}</td><td>${s.intYds}</td><td>${s.pd}</td><td>${s.hurries||0}</td></tr>`}
       html+=`</table></div>`;
     }
 
@@ -3024,7 +3031,7 @@ const Stats={
 
     // ---- Aggregate (self-contained) ----
     const passing={},rushing={},receiving={},defense={},punting={},puntRet={},kicking={},scoring={},ints={};
-    const ensD=(o,k)=>{if(!o[k])o[k]={tackles:0,sacks:0,sackYds:0,int:0,intYds:0,pd:0}};
+    const ensD=(o,k)=>{if(!o[k])o[k]={tackles:0,sacks:0,sackYds:0,int:0,intYds:0,pd:0,hurries:0}};
     const ensScore=(k)=>{if(!scoring[k])scoring[k]={pts:0,td:0,xp:0,xpAtt:0,fg:0,fgAtt:0,saf:0}};
     for(const play of plays){
       const p=play.players||{};
@@ -3066,6 +3073,7 @@ const Stats={
         }
       }
       if(side==='defense'){
+        if(type==='pass'&&p._hurry){ensD(defense,p._hurry);defense[p._hurry].hurries++;}
         if(type==='pass'){
           if(result==='complete'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
           if(result==='incomplete'&&p.defender){ensD(defense,p.defender);defense[p.defender].pd++;}
@@ -3117,6 +3125,10 @@ const Stats={
     const sackRows=Object.keys(defense).filter(n=>defense[n].sacks>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.sacks.toFixed(1),s.sackYds]}});
     const sackTot=sackRows.length?[sum(defense,'sacks').toFixed(1),sum(defense,'sackYds')]:null;
 
+    // QB Hurries
+    const hurryRows=Object.keys(defense).filter(n=>(defense[n].hurries||0)>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.hurries]}});
+    const hurryTot=hurryRows.length?[sum(defense,'hurries')]:null;
+
     // Interceptions
     const intRows=Object.keys(ints).map(n=>{const s=ints[n];return{label:L(n),vals:[s.int,s.yds]}});
     const intTot=intRows.length?[sum(ints,'int'),sum(ints,'yds')]:null;
@@ -3143,6 +3155,7 @@ const Stats={
     body+=tbl('Receiving',['Rec','Yds','Avg','Long','TD'],recRows,recTot);
     body+=tbl('Flag Pulls',['Solo','Tot'],defRows,defTot);
     body+=tbl('Sacks',['Sacks','Yds'],sackRows,sackTot);
+    body+=tbl('QB Hurries',['Hur'],hurryRows,hurryTot);
     body+=tbl('Interceptions',['Int','Int Yds'],intRows,intTot);
     body+=tbl('Punting',['Punts','Yds','Avg','Long'],puntRows,puntTot);
     body+=tbl('Punt Returns',['Ret','Yds','Avg','Long'],prRows,prTot);
@@ -3233,6 +3246,7 @@ const Stats={
           }
         }
       }else{ // defense
+        if(type==='pass'&&p._hurry)add(p._hurry,'QBHurries',1);
         if(type==='pass'){
           if(result==='complete'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
           if(result==='incomplete'&&p.defender)add(p.defender,'PassesDefensed',1);
@@ -3258,7 +3272,7 @@ const Stats={
     const ORDER=['PassingComp','PassingAtt','PassingInt','PassingYards','PassingTD','PassingLong',
       'RushingNum','RushingYards','RushingLong','RushingTDNum',
       'ReceivingNum','ReceivingYards','ReceivingLong','ReceivingTDNum',
-      'TotalFlagPulls','Sacks','SacksYardsLost','INTs','INTYards','PassesDefensed',
+      'TotalFlagPulls','Sacks','SacksYardsLost','QBHurries','INTs','INTYards','PassesDefensed',
       'PuntNum','PuntYards','PuntLong','PuntReturnNum','PuntReturnYards','PuntReturnLong','PuntReturnedTDNum','IntReturnedTDNum',
       'FieldGoalsMade','FieldGoalsAttempted','ExtraPointsMade','ExtraPointsAttempted',
       'TryMade1Pt','TryMade2Pt','TotalTryPoints',
@@ -3462,8 +3476,8 @@ const Flow={
     // new play). Every commit of THIS play reuses it, so even if a double-submit
     // slips past the re-entrancy guard, both carry the same uid and the server
     // dedupe collapses them into one — no duplicate scoring play.
-    this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null,_flagMode:false,_flag:null,_intTouchback:false,_uid:Cache.uid()};
-    this._committing=false;
+    this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null,_flagMode:false,_flag:null,_intTouchback:false,_hurry:null,_uid:Cache.uid()};
+    this._committing=false;this._hurryMode=false;
     if(typeof FieldPick!=='undefined')FieldPick.mode=null;
     // Clear any "Punting…/FG attempt…" indicator by restoring the real down bar.
     if(typeof GameUI!=='undefined' && currentGame){ try{ GameUI.refresh(); }catch(e){} }
@@ -3730,6 +3744,23 @@ const Flow={
     this.showConfirm();
   },
 
+  // QB HURRY — a judgment-call defensive stat on an opponent pass play. Tap to
+  // enter the defender # who pressured the QB; stored on the play as c._hurry.
+  // The play's own result/stats are untouched; hurry is a separate credit.
+  addHurry(){
+    const c=this.current;
+    if(!(gameState.possession==='defense'&&c.type==='pass'))return; // only our D vs their pass
+    this._hurryMode=true;
+    document.getElementById('step-confirm').classList.add('hidden');
+    Keypad.start('QB Hurried By # (defender)','_hurry',false);
+  },
+  // Called by Keypad after the hurry defender # is entered.
+  _gotHurry(num){
+    this._hurryMode=false;
+    if(num)this.current._hurry=num;
+    this.showConfirm();
+  },
+
   // FLAG ON THE PLAY — add a penalty on TOP of a normal play (enforced from the
   // end of the play). Enters "flag mode" so the penalty picker writes into a
   // SEPARATE c._flag namespace instead of clobbering the play's result/yards.
@@ -3851,6 +3882,11 @@ const Flow={
     const showFlag=!(c.result==='penalty'||c.type==='penalty')&&!(c._flag&&c._flag.code);
     const fb=document.getElementById('flag-on-play-btn');
     if(fb)fb.classList.toggle('hidden',!showFlag);
+    // "QB Hurry" — judgment call, available only when the OPPONENT is passing
+    // (our defense pressured their QB). Hidden once a hurry is added.
+    const showHurry=(gameState.possession==='defense')&&(c.type==='pass')&&!c._hurry;
+    const hb=document.getElementById('qb-hurry-btn');
+    if(hb)hb.classList.toggle('hidden',!showHurry);
     document.getElementById('step-confirm').classList.remove('hidden')
   },
 
@@ -4143,6 +4179,7 @@ const Flow={
     const playersData=Object.assign({},c.players);
     if(c._retYds)playersData._retYds=c._retYds;              // punt return yards
     if(c.result==='interception')playersData._intRetYds=c.yards||0; // INT return yards
+    if(c._hurry){ playersData._hurry=c._hurry; finalDesc+=` · ⚡ QB hurry by #${c._hurry}`; }  // judgment-call defensive stat
     // Full snapshot of state BEFORE this play, for undo
     playersData._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
     // Save play to server
@@ -4222,6 +4259,8 @@ const Keypad={
       // Set-play / INT path: collect this player, continue the XP queue.
       XP._gotPlayer(this.value||'');return;
     }
+    // QB Hurry entry — route back to the confirm screen, not the player queue.
+    if(Flow._hurryMode){ Flow._gotHurry(this.value||''); return; }
     if(this.value)Flow.current.players[this.key]=this.value;
     Flow.askNextPlayer();
   }
@@ -5202,7 +5241,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v79';
+var APP_VERSION='v80';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
