@@ -2667,6 +2667,8 @@ const Stats={
           if(result==='complete'&&p.flagPuller){
             if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
             defense[p.flagPuller].tackles++;
+            // Tackle for loss: completed pass caught BEHIND the line (negative yards).
+            if(yds<0){ defense[p.flagPuller].tfl=(defense[p.flagPuller].tfl||0)+1; defense[p.flagPuller].tflYds=(defense[p.flagPuller].tflYds||0)+Math.abs(yds); }
           }
           if(result==='incomplete'&&p.defender){
             if(!defense[p.defender])defense[p.defender]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
@@ -2685,6 +2687,8 @@ const Stats={
         if(type==='run'&&p.flagPuller){
           if(!defense[p.flagPuller])defense[p.flagPuller]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
           defense[p.flagPuller].tackles++;
+          // Tackle for loss: run stopped behind the line (result 'loss', or negative yards).
+          if(result==='loss'||yds<0){ defense[p.flagPuller].tfl=(defense[p.flagPuller].tfl||0)+1; defense[p.flagPuller].tflYds=(defense[p.flagPuller].tflYds||0)+Math.abs(yds); }
         }
         if(type==='fgblock'&&result==='blocked'&&p.blocker){
           if(!defense[p.blocker])defense[p.blocker]={tackles:0,sacks:0,int:0,intYds:0,pd:0};
@@ -2745,8 +2749,8 @@ const Stats={
     // DEFENSE
     const defKeys=Object.keys(defense);
     if(defKeys.length){
-      html+=`<div class="card"><h3>🛡️ Defense</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Tkl</td><td>Sck</td><td>INT</td><td>INT Yds</td><td>PD</td><td>Hur</td></tr>`;
-      for(const num of defKeys){const s=defense[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.tackles}</td><td>${s.sacks}</td><td>${s.int}</td><td>${s.intYds}</td><td>${s.pd}</td><td>${s.hurries||0}</td></tr>`}
+      html+=`<div class="card"><h3>🛡️ Defense</h3><table style="width:100%;font-size:0.8rem;border-collapse:collapse"><tr style="border-bottom:1px solid var(--border);font-weight:700"><td>#</td><td>Tkl</td><td>Sck</td><td>TFL</td><td>TFL Yds</td><td>INT</td><td>INT Yds</td><td>PD</td><td>Hur</td></tr>`;
+      for(const num of defKeys){const s=defense[num];html+=`<tr style="border-bottom:1px solid #eee"><td><strong>#${num}</strong></td><td>${s.tackles}</td><td>${s.sacks}</td><td>${s.tfl||0}</td><td>${s.tflYds||0}</td><td>${s.int}</td><td>${s.intYds}</td><td>${s.pd}</td><td>${s.hurries||0}</td></tr>`}
       html+=`</table></div>`;
     }
 
@@ -3031,7 +3035,7 @@ const Stats={
 
     // ---- Aggregate (self-contained) ----
     const passing={},rushing={},receiving={},defense={},punting={},puntRet={},kicking={},scoring={},ints={};
-    const ensD=(o,k)=>{if(!o[k])o[k]={tackles:0,sacks:0,sackYds:0,int:0,intYds:0,pd:0,hurries:0}};
+    const ensD=(o,k)=>{if(!o[k])o[k]={tackles:0,sacks:0,sackYds:0,int:0,intYds:0,pd:0,hurries:0,tfl:0,tflYds:0}};
     const ensScore=(k)=>{if(!scoring[k])scoring[k]={pts:0,td:0,xp:0,xpAtt:0,fg:0,fgAtt:0,saf:0}};
     for(const play of plays){
       const p=play.players||{};
@@ -3075,12 +3079,12 @@ const Stats={
       if(side==='defense'){
         if(type==='pass'&&p._hurry){ensD(defense,p._hurry);defense[p._hurry].hurries++;}
         if(type==='pass'){
-          if(result==='complete'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+          if(result==='complete'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;if(yds<0){defense[p.flagPuller].tfl++;defense[p.flagPuller].tflYds+=Math.abs(yds);}}
           if(result==='incomplete'&&p.defender){ensD(defense,p.defender);defense[p.defender].pd++;}
           if(result==='interception'&&p.interceptor){ensD(defense,p.interceptor);defense[p.interceptor].int++;const ir=(p._intRetYds!==undefined?p._intRetYds:yds);defense[p.interceptor].intYds+=ir;if(!ints[p.interceptor])ints[p.interceptor]={int:0,yds:0,pd:0};ints[p.interceptor].int++;ints[p.interceptor].yds+=ir;}
           if(result==='sack'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].sacks++;defense[p.flagPuller].sackYds+=Math.abs(yds);}
         }
-        if(type==='run'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;}
+        if(type==='run'&&p.flagPuller){ensD(defense,p.flagPuller);defense[p.flagPuller].tackles++;if(result==='loss'||yds<0){defense[p.flagPuller].tfl++;defense[p.flagPuller].tflYds+=Math.abs(yds);}}
         if(type==='fgblock'&&result==='blocked'&&p.blocker){ensD(defense,p.blocker);defense[p.blocker].pd++;}
         if(type==='puntreturn'&&result==='return'&&p.returner){const r=(p._retYds!==undefined?p._retYds:0);if(!puntRet[p.returner])puntRet[p.returner]={ret:0,yds:0,long:0};puntRet[p.returner].ret++;puntRet[p.returner].yds+=r;if(r>puntRet[p.returner].long)puntRet[p.returner].long=r;}
         // OUR defender on the OPPONENT's try (pick / breakup / stop).
@@ -3125,6 +3129,10 @@ const Stats={
     const sackRows=Object.keys(defense).filter(n=>defense[n].sacks>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.sacks.toFixed(1),s.sackYds]}});
     const sackTot=sackRows.length?[sum(defense,'sacks').toFixed(1),sum(defense,'sackYds')]:null;
 
+    // Tackles For Loss
+    const tflRows=Object.keys(defense).filter(n=>(defense[n].tfl||0)>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.tfl,s.tflYds]}});
+    const tflTot=tflRows.length?[sum(defense,'tfl'),sum(defense,'tflYds')]:null;
+
     // QB Hurries
     const hurryRows=Object.keys(defense).filter(n=>(defense[n].hurries||0)>0).map(n=>{const s=defense[n];return{label:L(n),vals:[s.hurries]}});
     const hurryTot=hurryRows.length?[sum(defense,'hurries')]:null;
@@ -3155,6 +3163,7 @@ const Stats={
     body+=tbl('Receiving',['Rec','Yds','Avg','Long','TD'],recRows,recTot);
     body+=tbl('Flag Pulls',['Solo','Tot'],defRows,defTot);
     body+=tbl('Sacks',['Sacks','Yds'],sackRows,sackTot);
+    body+=tbl('Tackles For Loss',['TFL','Yds'],tflRows,tflTot);
     body+=tbl('QB Hurries',['Hur'],hurryRows,hurryTot);
     body+=tbl('Interceptions',['Int','Int Yds'],intRows,intTot);
     body+=tbl('Punting',['Punts','Yds','Avg','Long'],puntRows,puntTot);
@@ -3248,12 +3257,12 @@ const Stats={
       }else{ // defense
         if(type==='pass'&&p._hurry)add(p._hurry,'QBHurries',1);
         if(type==='pass'){
-          if(result==='complete'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
+          if(result==='complete'&&p.flagPuller){ add(p.flagPuller,'TotalFlagPulls',1); if(yds<0){ add(p.flagPuller,'TacklesForLoss',1); add(p.flagPuller,'TacklesForLossYards',Math.abs(yds)); } }
           if(result==='incomplete'&&p.defender)add(p.defender,'PassesDefensed',1);
           if(result==='interception'&&p.interceptor){ add(p.interceptor,'INTs',1); add(p.interceptor,'INTYards',(p._intRetYds!==undefined?p._intRetYds:yds)); if(isTD){add(p.interceptor,'IntReturnedTDNum',1);add(p.interceptor,'TotalTDNum',1);add(p.interceptor,'TotalPoints',6);} }
           if(result==='sack'&&p.flagPuller){ add(p.flagPuller,'Sacks',1); add(p.flagPuller,'SacksYardsLost',Math.abs(yds)); }
         }
-        if(type==='run'&&p.flagPuller)add(p.flagPuller,'TotalFlagPulls',1);
+        if(type==='run'&&p.flagPuller){ add(p.flagPuller,'TotalFlagPulls',1); if(result==='loss'||yds<0){ add(p.flagPuller,'TacklesForLoss',1); add(p.flagPuller,'TacklesForLossYards',Math.abs(yds)); } }
         if(type==='fgblock'&&result==='blocked'&&p.blocker)add(p.blocker,'PassesDefensed',1);
         if(type==='puntreturn'&&result==='return'&&p.returner){ add(p.returner,'PuntReturnNum',1); add(p.returner,'PuntReturnYards',(p._retYds!==undefined?p._retYds:0)); max(p.returner,'PuntReturnLong',(p._retYds!==undefined?p._retYds:0)); if(isTD){add(p.returner,'PuntReturnedTDNum',1);add(p.returner,'TotalTDNum',1);add(p.returner,'TotalPoints',6);} }
         // OUR defender on the OPPONENT's try (pick / breakup).
@@ -3272,7 +3281,7 @@ const Stats={
     const ORDER=['PassingComp','PassingAtt','PassingInt','PassingYards','PassingTD','PassingLong',
       'RushingNum','RushingYards','RushingLong','RushingTDNum',
       'ReceivingNum','ReceivingYards','ReceivingLong','ReceivingTDNum',
-      'TotalFlagPulls','Sacks','SacksYardsLost','QBHurries','INTs','INTYards','PassesDefensed',
+      'TotalFlagPulls','Sacks','SacksYardsLost','TacklesForLoss','TacklesForLossYards','QBHurries','INTs','INTYards','PassesDefensed',
       'PuntNum','PuntYards','PuntLong','PuntReturnNum','PuntReturnYards','PuntReturnLong','PuntReturnedTDNum','IntReturnedTDNum',
       'FieldGoalsMade','FieldGoalsAttempted','ExtraPointsMade','ExtraPointsAttempted',
       'TryMade1Pt','TryMade2Pt','TotalTryPoints',
@@ -5241,7 +5250,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v80';
+var APP_VERSION='v81';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
