@@ -3458,7 +3458,12 @@ const Flow={
   current:{},playerQueue:[],
 
   restart(){
-    this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null,_flagMode:false,_flag:null,_intTouchback:false};
+    // Mint the play's clientUid ONCE per logical play (when the flow resets for a
+    // new play). Every commit of THIS play reuses it, so even if a double-submit
+    // slips past the re-entrancy guard, both carry the same uid and the server
+    // dedupe collapses them into one — no duplicate scoring play.
+    this.current={type:null,result:null,players:{},yards:0,_puntDist:null,_retYds:null,_flagMode:false,_flag:null,_intTouchback:false,_uid:Cache.uid()};
+    this._committing=false;
     if(typeof FieldPick!=='undefined')FieldPick.mode=null;
     // Clear any "Punting…/FG attempt…" indicator by restoring the real down bar.
     if(typeof GameUI!=='undefined' && currentGame){ try{ GameUI.refresh(); }catch(e){} }
@@ -3913,6 +3918,18 @@ const Flow={
     return null; // defensive plays / others: flag pullers etc. are already optional
   },
   async confirm(){
+    // RE-ENTRANCY GUARD: a fast double-tap on "Record Play" used to run this
+    // twice (two play objects, two clientUids → the server couldn't dedupe →
+    // duplicate scoring play). Refuse any second entry while one is in flight.
+    if(this._committing) return;
+    this._committing=true;
+    try{
+      await this._confirmInner();
+    } finally {
+      this._committing=false;
+    }
+  },
+  async _confirmInner(){
     const c=this.current,r=currentSeason.rules;
     // OPTION B: if this play type normally charges a player but none was entered,
     // confirm it's intentional (e.g. runner out of bounds / offensive bad snap).
@@ -3955,7 +3972,7 @@ const Flow={
       }
       const penPlayers=Object.assign({},c.players||{});
       penPlayers._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
-      const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:penFinalDesc,quarter:gameState.quarter||1,penalty:pen,clientUid:Cache.uid(),_gameId:currentGame.id};
+      const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type||'penalty',result:'penalty',players:penPlayers,yards:netYds,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:penFinalDesc,quarter:gameState.quarter||1,penalty:pen,clientUid:c._uid||Cache.uid(),_gameId:currentGame.id};
       gamePlays.push(play);
       try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
       Banner.update();
@@ -4129,7 +4146,7 @@ const Flow={
     // Full snapshot of state BEFORE this play, for undo
     playersData._stateBefore=JSON.stringify({gameState:prevState,teamScore:prevTeamScore,oppScore:prevOppScore});
     // Save play to server
-    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1,clientUid:Cache.uid(),_gameId:currentGame.id};
+    const play={playNumber:gamePlays.length+1,possession:prevState.possession,playType:c.type,result:c.result,players:playersData,yards:statYards,downBefore:prevState.down,ballPosBefore:prevState.ballPos,description:finalDesc,quarter:gameState.quarter||1,clientUid:c._uid||Cache.uid(),_gameId:currentGame.id};
     gamePlays.push(play);
     // Save to server, fall back to cache if offline
     try{await API.post(`/games/${currentGame.id}/plays`,play)}catch(e){Cache.queuePlay(play)}
@@ -4553,6 +4570,7 @@ const XP={
     this._setType=null; this._players={}; this._pq=[]; this._pendingAfter=null;
     this._setResult=null; this._flag=null; this._setYards=0;
     this._intOutcome=null; this._intRetYds=0; this._waitingYards=false; this._waitingIntRet=false;
+    this._committing=false;
     document.getElementById('play-flow').classList.add('hidden');
     document.getElementById('game-ctrls').classList.add('hidden');
     document.getElementById('panel-xp').classList.remove('hidden');
@@ -4792,6 +4810,8 @@ const XP={
 
   // ---- Shared commit: build the xp play, score already applied, switch possession ----
   async _commit(opts){
+    if(this._committing) return;   // guard against a double-tap on the result button
+    this._committing=true;
     const play={
       playNumber:gamePlays.length+1,
       possession:this.team==='team'?'offense':'defense',
@@ -4819,6 +4839,7 @@ const XP={
     try{await API.put(`/games/${currentGame.id}`,{teamScore:currentGame.teamScore,oppScore:currentGame.oppScore,gameState})}catch(e){}
     Cache.saveLocal();
     // Reset transient state and return to the normal play flow.
+    this._committing=false;
     this._player=null;this._result=null;this._waitingForPlayer=false;this._kickMode=false;
     this._setType=null;this._players={};this._pq=[];this._setResult=null;this._intOutcome=null;this._setYards=0;this._intRetYds=0;this._waitingYards=false;this._waitingIntRet=false;
     document.getElementById('panel-xp').classList.add('hidden');
@@ -4883,10 +4904,15 @@ const GameActions={
     GameUI.refresh();Flow.restart();
   },
   async endQuarter(){
+    if(this._endingQuarter)return;   // guard against a double-tap recording two markers
     const qtr=gameState.quarter||1;
     // Confirm to prevent accidental double-taps ending two quarters
     const qLabel=qtr>=5?`overtime period ${qtr-4}`:`Q${qtr}`;
     if(!confirm(`End ${qLabel}?`))return;
+    this._endingQuarter=true;
+    try{ await this._endQuarterInner(qtr); } finally { this._endingQuarter=false; }
+  },
+  async _endQuarterInner(qtr){
     if(qtr>=4){
       // End of Q4 (or overtime) — check if tied
       if(currentGame.teamScore===currentGame.oppScore){
@@ -5176,7 +5202,7 @@ window.addEventListener('popstate', function(ev){
 // Single source of truth for the visible app version. Bump this each release
 // (alongside the service-worker CACHE name). Stamped into the main app header
 // and the watch-view header so they never drift.
-var APP_VERSION='v78';
+var APP_VERSION='v79';
 (function stampVersion(){
   try{
     var a=document.getElementById('app-version'); if(a)a.textContent=APP_VERSION;
